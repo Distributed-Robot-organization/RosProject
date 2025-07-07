@@ -1,5 +1,5 @@
 <?xml version='1.0' ?>
-<robot name='shelfino' xmlns:xacro='http://www.ros.org/wiki/xacro'>  
+<robot name='shelfino' xmlns:xacro='http://www.ros.org/wiki/xacro'>
   <gazebo>
     <plugin name="diff_drive" filename="libgazebo_ros_diff_drive.so">
       <update_rate>30</update_rate>
@@ -22,7 +22,6 @@
       <publish_odom_tf>true</publish_odom_tf>
       <publish_wheel_tf>true</publish_wheel_tf>
     </plugin>
-  </gazebo> 
+  </gazebo>
 
 </robot>
-

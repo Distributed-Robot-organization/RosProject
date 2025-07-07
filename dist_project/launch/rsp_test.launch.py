@@ -48,6 +48,8 @@ def generate_launch_description():
             namespace=shelfino_name,
             output='screen',
             parameters=[{'use_sim_time': use_sim_time},
+                        #{'frame_prefix':shelfino_name},
+
                         {'robot_description': robot_desc}],
         )
     ])

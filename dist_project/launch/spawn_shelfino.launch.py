@@ -94,87 +94,114 @@ def start_shelfini(configs, shelfino_desc_pkg, shelfino_nav2_pkg):
                 namespace=shelfino_name,
             )
 
+
             nodes += [
                 rsp_launch_file,
                 spawn_shelfino_node,
+
                 nav2_launch_file,
                 destroy_shelfino_node
             ]
 
     return nodes , shelfini_names # + evaluate_rviz(configs,shelfini_names)
 
-def evaluate_rviz(configs, shelfini_names):
-    """
-    This function allows for launching just one Rviz instance for all the robots.
-    It takes the rviz config file and creates a new one with the correct items
-    multiplied for all the robots.
-    :param context: The context of the launch including the launch config.
-    """
-    print("Passed shelfini_names", shelfini_names)
-    shelfino_nav2_pkg = get_package_share_directory('shelfino_navigation')
 
-    rviz_path = configs['nav2_rviz_config_file']
-    cr_path = os.path.join(shelfino_nav2_pkg, 'rviz', f"shelfini_{len(shelfini_names)}_nav.rviz")
 
-    output_config = {}
-    with open(rviz_path, 'r') as f_in:
-        rviz_config= yaml.load(f_in, Loader=yaml.FullLoader)
-        for key in rviz_config.keys():
-            if key != 'Visualization Manager':
-                output_config[key] = rviz_config[key]
+# def evaluate_rviz(configs, shelfini_names):
+#     """
+#     This function allows for launching just one Rviz instance for all the robots.
+#     It takes the rviz config file and creates a new one with the correct items
+#     multiplied for all the robots.
+#     :param context: The context of the launch including the launch config.
+#     """
+#     print("Passed shelfini_names", shelfini_names)
+#     shelfino_nav2_pkg = get_package_share_directory('shelfino_navigation')
 
-        # Add everything that is not displays or tools
-        output_config['Visualization Manager'] = {}
-        for key in rviz_config['Visualization Manager'].keys():
-            if key != 'Displays' and key != 'Tools':
-                output_config['Visualization Manager'][key] = rviz_config['Visualization Manager'][key]
+#     rviz_path = configs['nav2_rviz_config_file']
+#     cr_path = os.path.join(shelfino_nav2_pkg, 'rviz', f"shelfini_{len(shelfini_names)}_nav.rviz")
 
-        # Configure displays for Rviz
-        displays = rviz_config['Visualization Manager']['Displays']
-        output_config['Visualization Manager']['Displays'] = []
-        for display in displays:
-            if type(display) is not dict:
-                raise Exception("[{}] Display `{}` is not a dictionary".format(__file__, display))
-            if "shelfinoX" in str(display):
-                display_str = str(display)
-                for shelfino_name in shelfini_names:
-                    output_config['Visualization Manager']['Displays'].append(
-                        yaml.load(display_str.replace("shelfinoX", shelfino_name), Loader=yaml.FullLoader))
-            else:
-                output_config['Visualization Manager']['Displays'].append(display)
+#     output_config = {}
+#     with open(rviz_path, 'r') as f_in:
+#         rviz_config= yaml.load(f_in, Loader=yaml.FullLoader)
+#         for key in rviz_config.keys():
+#             if key != 'Visualization Manager':
+#                 output_config[key] = rviz_config[key]
 
-        # Configure tools for Rviz
-        tools = rviz_config['Visualization Manager']['Tools']
-        output_config['Visualization Manager']['Tools'] = []
-        for tool in tools:
-            if type(tool) is not dict:
-                raise Exception("[{}] Tool `{}` is not a dictionary".format(__file__, tool))
-            if "shelfinoX" in str(tool):
-                tool_str = str(tool)
-                for shelfino_name in shelfini_names:
-                    output_config['Visualization Manager']['Tools'].append(
-                        yaml.load(tool_str.replace("shelfinoX", shelfino_name), Loader=yaml.FullLoader))
-            else:
-                output_config['Visualization Manager']['Tools'].append(tool)
+#         # Add everything that is not displays or tools
+#         output_config['Visualization Manager'] = {}
+#         for key in rviz_config['Visualization Manager'].keys():
+#             if key != 'Displays' and key != 'Tools':
+#                 output_config['Visualization Manager'][key] = rviz_config['Visualization Manager'][key]
 
-        print(output_config)
-        print("Writing to", cr_path)
+#         # Configure displays for Rviz
+#         displays = rviz_config['Visualization Manager']['Displays']
+#         output_config['Visualization Manager']['Displays'] = []
+#         for display in displays:
+#             if type(display) is not dict:
+#                 raise Exception("[{}] Display `{}` is not a dictionary".format(__file__, display))
+#             if "shelfinoX" in str(display):
+#                 display_str = str(display)
+#                 for shelfino_name in shelfini_names:
+#                     output_config['Visualization Manager']['Displays'].append(
+#                         yaml.load(display_str.replace("shelfinoX", shelfino_name), Loader=yaml.FullLoader))
+#             else:
+#                 output_config['Visualization Manager']['Displays'].append(display)
 
-        with open(cr_path, 'w+') as f_out:
-            yaml.dump(output_config, f_out, default_flow_style=False)
+#         # Configure tools for Rviz
+#         tools = rviz_config['Visualization Manager']['Tools']
+#         output_config['Visualization Manager']['Tools'] = []
+#         for tool in tools:
+#             if type(tool) is not dict:
+#                 raise Exception("[{}] Tool `{}` is not a dictionary".format(__file__, tool))
+#             if "shelfinoX" in str(tool):
+#                 tool_str = str(tool)
+#                 for shelfino_name in shelfini_names:
+#                     output_config['Visualization Manager']['Tools'].append(
+#                         yaml.load(tool_str.replace("shelfinoX", shelfino_name), Loader=yaml.FullLoader))
+#             else:
+#                 output_config['Visualization Manager']['Tools'].append(tool)
 
-    configs['rviz_config_file'] = cr_path
+#         print(output_config)
+#         print("Writing to", cr_path)
 
-    return [Node(
-        package='rviz2',
-        executable='rviz2',
-        name='rviz2',
-        output='screen',
-        arguments=['-d', configs['rviz_config_file']],
-        parameters=[
-            {'use_sim_time': True if configs['use_sim_time'] == 'true' else False}
-        ],
-    )]
+#         with open(cr_path, 'w+') as f_out:
+#             yaml.dump(output_config, f_out, default_flow_style=False)
+
+#     configs['rviz_config_file'] = cr_path
+
+    # return [Node(
+    #     package='rviz2',
+    #     executable='rviz2',
+    #     name='rviz2',
+    #     output='screen',
+    #     arguments=['-d', configs['rviz_config_file']],
+    #     parameters=[
+    #         {'use_sim_time': True if configs['use_sim_time'] == 'true' else False}
+    #     ],
+    # )]
+
+def define_yaml_templates(configs):
+
+
+
+    nav2_yaml_file = configs["nav2_params_file_path_template"]
+    map_yaml_file = configs["map_file"]
+
+    # Load template
+    with open(nav2_yaml_file, 'r') as f:
+        config = yaml.safe_load(f)
+
+    # Substitute value
+    config['map_server']['ros__parameters']['yaml_filename'] = map_yaml_file
+
+    # Write temporary file
+    tmp_path = '/tmp/temp_nav2_config.yaml'
+    with open(tmp_path, 'w') as f:
+        yaml.dump(config, f)
+
+    configs["nav2_params_file_path"]  = tmp_path
+    return configs
+
 
 def generate_launch_description():
 
@@ -184,7 +211,8 @@ def generate_launch_description():
     dist_project_pkg        = get_package_share_directory('dist_project')
     configs = {}
 
-    configs["nav2_params_file_path"] = os.path.join(shelfino_nav2_pkg, 'config', 'shelfino.yaml')
+
+    configs["nav2_params_file_path_template"] = os.path.join(dist_project_pkg, 'config', 'shelfino_nav.yaml')
     configs["map_config"] = os.path.join(dist_project_pkg, 'config', 'single_shelfino.yaml')
     configs["project_package"] = dist_project_pkg
 
@@ -194,13 +222,21 @@ def generate_launch_description():
     # Gazebo simulation arguments
     configs["use_gui"]           = LaunchConfiguration('use_gui', default='true')
     configs["use_rviz"]          = LaunchConfiguration('use_rviz', default='true')
+    map_name = "NOT DEFINED"
+    with open (configs["map_config"], 'r') as f:
+        shelfino_config_yaml = yaml.load(f, Loader=yaml.FullLoader)
+        shelfino_config_yaml = shelfino_config_yaml["/**"]["ros__parameters"]
+        map_name = shelfino_config_yaml["map"]
 
-    configs['rviz_single_shelfino_config_file'] = LaunchConfiguration('rviz_single_shelfino_config_file', default=os.path.join(dist_project_pkg, 'config', 'shelfino_perspective.rviz'))
-    configs["rviz_config_file"]  = LaunchConfiguration('rviz_config_file', default=os.path.join(shelfino_desc_pkg, 'rviz', 'shelfino.rviz'))
-    configs["gazebo_world_file"] = LaunchConfiguration('gazebo_world_file', default=os.path.join(dist_project_pkg, 'worlds', 'test_world.world'))
+    configs["map_file"]              = os.path.join(dist_project_pkg, 'worlds', f'{map_name}/{map_name}.yaml')
+
+    configs = define_yaml_templates(configs)
+
+    #Defined config files
+    configs["rviz_config_file"]  = LaunchConfiguration('rviz_config_file', default=os.path.join(dist_project_pkg, 'config', 'overall_map.rviz'))
+    configs["gazebo_world_file"] = LaunchConfiguration('gazebo_world_file', default=os.path.join(dist_project_pkg, 'worlds', f'{map_name}/{map_name}.world'))
 
     # Navigation arguments
-    configs["map_file"]              = LaunchConfiguration('map_file', default=os.path.join(shelfino_nav2_pkg, 'maps', 'dynamic_map.yaml'))
     configs["nav2_params_file"]      = LaunchConfiguration('nav2_params_file', default=configs["nav2_params_file_path"])
     configs["nav2_rviz_config_file"] = LaunchConfiguration('nav2_rviz_config_file', default=os.path.join(shelfino_nav2_pkg, 'rviz', 'shelfino_nav.rviz'))
 
@@ -210,6 +246,8 @@ def generate_launch_description():
     # !!! MAKE SURE YOU SET THE PACKAGE NAME CORRECTLY !!!
     #
     nodes_to_launch, shelfini_names = start_shelfini(configs, shelfino_desc_pkg, shelfino_nav2_pkg)
+    #nodes_to_launch+=evaluate_rviz(configs, shelfini_names)
+
 
     gazebo_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource([
@@ -223,16 +261,16 @@ def generate_launch_description():
             'spawn_shelfino': 'false',
         }.items()
     )
-    if len(shelfini_names)==1:
+    if len(shelfini_names)==2:
         nodes_to_launch+=[
             Node(
                 package='rviz2',
                 executable='rviz2',
                 name='rviz2',
                 output='screen',
-                arguments=['-d', configs['rviz_single_shelfino_config_file']],
+                arguments=['-d', configs['rviz_config_file']],
                 parameters=[
-                    {'use_sim_time': True if configs['use_sim_time'] == 'true' else False}
+                    {'use_sim_time': "true" if configs['use_sim_time'] == 'true' else "false"}
                 ],
             )
         ]

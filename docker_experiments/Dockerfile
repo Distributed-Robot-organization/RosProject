@@ -9,8 +9,10 @@ RUN apt-get update \
     && sudo apt-get install -y \
     ros-humble-navigation2 \
     ros-humble-nav2-bringup \
+    ros-humble-gazebo-ros-pkgs\
     python3-colcon-common-extensions\
     python3-shapely\
+    ros-humble-rmw-cyclonedds-cpp\
     && rm -rf /var/lib/apt/lists/*
 
 #ros-humble-turtlebot3* \
@@ -23,3 +25,11 @@ RUN apt-get update \
 
 # Set the environment variable required to run TurtleBot3
 ENV TURTLEBOT3_MODEL=burger
+ENV RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+RUN echo 'alias refresh="source install/setup.bash"' >> ~/.bashrc
+RUN echo 'alias build="colcon build --symlink-install && source install/setup.bash"' >> ~/.bashrc
+RUN echo 'clean_build(){\
+    rm -rf build install log \
+    build\
+    }'
+RUN source /opt/ros/humble/setup.bash

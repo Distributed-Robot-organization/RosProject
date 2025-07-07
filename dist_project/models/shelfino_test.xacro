@@ -4,8 +4,19 @@
   <xacro:property name='PI_2' value='1.5707963267948966' />
   <xacro:arg name="robot_name" default="X" />
 
+
   <!-- Define the macro for the whole shelfino -->
   <xacro:macro name="shelfino" params='robot_name'>
+
+
+    <xacro:if value="${robot_name != 'X'}">
+        <xacro:property name="robot_name_slash" value="'${robot_name}/'" />
+    </xacro:if>
+    <xacro:unless value="${robot_name == 'X'}">
+        <xacro:property name="robot_name_slash" value="''" />
+    </xacro:unless>
+    <xacro:property name="robot_name_slash" value="${robot_name != 'X'}? '' : 'pollo'" />
+
 
       <xacro:include filename='shelfino_test/materials.xacro' />
 

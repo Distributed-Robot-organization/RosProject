@@ -1,4 +1,9 @@
-aliases and bash functions to make the containter run as intended
+aliases and bash functions to make the container run as intended
+
+docker command build
+``` bash
+docker build dist_docker .
+```
 
 ``` bash
 ros_docker(){
@@ -12,7 +17,7 @@ ros_docker(){
       --privileged \
       --name ros_docker \
       --workdir=/home/computer \
-      nav2_tests_turtlebot
+      dist_docker
 }
 
 
