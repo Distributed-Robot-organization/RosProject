@@ -1,0 +1,5 @@
+amcl:
+  ros__parameters:
+    base_frame_id: ROBOT_NAME/base_link
+    odom_frame_id: ROBOT_NAME/odom
+    global_frame_id: map

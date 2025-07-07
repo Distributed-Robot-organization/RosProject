@@ -1,0 +1,4 @@
+slam_toolbox:
+  ros__parameters:
+    odom_frame: "shelfino1/odom"
+    base_frame: "shelfino1/base_link"
