@@ -31,5 +31,5 @@ RUN echo 'alias build="colcon build --symlink-install && source install/setup.ba
 RUN echo 'clean_build(){\
     rm -rf build install log \
     build\
-    }'
-RUN source /opt/ros/humble/setup.bash
+    }' >> ~/.bashrc
+RUN echo 'source /opt/ros/humble/setup.bash' >> ~/.bashrc
