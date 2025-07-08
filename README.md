@@ -1,1 +1,34 @@
-This is designed to be an indipendent package to the Ros Shelfino project
+This is designed to be run as part of the Ros Shelfino project
+
+# Launch simulation
+```bash
+ ros2 launch dist_project spawn_shelfino.launch.py
+```
+
+# Docker Commands
+aliases and bash functions to make the container run as intended
+
+## docker command build
+``` bash
+docker build dist_docker .
+```
+## Commands to run Docker
+
+``` bash
+ros_docker(){
+    xhost +local:root
+    sudo docker run -it --rm \
+      --env="DISPLAY=$DISPLAY" \
+      --env="QT_X11_NO_MITSHM=1" \
+      --volume="/tmp/.X11-unix:/tmp/.X11-unix:rw" \
+      --volume=".:/home/computer"\
+      --network=host \
+      --privileged \
+      --name ros_docker \
+      --workdir=/home/computer \
+      dist_docker
+}
+
+
+alias ros_docker_connect="docker exec -it ros_docker bash"
+```
