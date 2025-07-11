@@ -13,6 +13,9 @@ from nav2_common.launch import RewrittenYaml
 from launch.events.process import ProcessExited
 from launch.event_handlers import OnProcessExit
 
+from launch_ros.actions import ComposableNodeContainer
+from launch_ros.descriptions import ComposableNode
+
 import logging
 
 import yaml, re
@@ -93,6 +96,62 @@ def start_shelfini(configs, shelfino_desc_pkg, shelfino_nav2_pkg):
                 output='screen',
                 namespace=shelfino_name,
             )
+            
+            depth_perception_corrections_nodes = [
+                
+                ComposableNodeContainer(
+                    name='depth_proc_container',
+                    namespace=shelfino_name,
+                    package='rclcpp_components',
+                    executable='component_container_mt',
+                    composable_node_descriptions=[
+                        ComposableNode(
+                            package='depth_image_proc',
+                            plugin='depth_image_proc::PointCloudXyzNode',
+                            name='point_cloud_xyz_node',
+                            remappings=[
+                                ('image_rect', '/f_camera/depth/image_raw'),
+                                ('camera_info', '/f_camera/depth/camera_info'),
+                                ('points', '/f_camera/depth/points')
+                            ]
+                        )
+                    ],
+                    output='screen'
+                ),
+    
+                # # Depth Image to PointCloud conversion
+                # Node(
+                #     package='depth_image_proc',
+                #     executable='point_cloud_xyz',
+                #     name='depth_to_cloud',
+                #     remappings=[
+                #         ('image_rect', '/f_camera/depth/image_raw'),
+                #         ('camera_info', '/f_camera/depth/camera_info'),
+                #         ('points', '/f_camera/depth/points')
+                #     ],
+                #     namespace=shelfino_name,
+                #     output='screen'
+                # ),
+
+                # Passthrough filter to remove out-of-bounds depth points
+                Node(
+                    package='pcl_ros',
+                    executable='passthrough',
+                    name='z_filter',
+                    parameters=[{
+                        'filter_field_name': 'z',
+                        'filter_limit_min': 0.05,
+                        'filter_limit_max': 8.0,
+                        'filter_limit_negative': False
+                    }],
+                    remappings=[
+                        ('cloud_in', '/f_camera/points'),
+                        ('cloud_out', '/f_camera/points_filtered')
+                    ],
+                    namespace=shelfino_name,
+                    output='screen'
+                )
+            ]
 
 
             nodes += [
@@ -102,6 +161,7 @@ def start_shelfini(configs, shelfino_desc_pkg, shelfino_nav2_pkg):
                 nav2_launch_file,
                 destroy_shelfino_node
             ]
+            #nodes += depth_perception_corrections_nodes
 
     return nodes , shelfini_names # + evaluate_rviz(configs,shelfini_names)
 

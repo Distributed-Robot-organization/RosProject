@@ -15,6 +15,27 @@
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
+
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
+
+
+  <depend>rclcpp</depend>
+  <depend>std_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>pcl_conversions</depend>
+  <depend>pcl_transforms</depend>
+
+  <depend>pcl_1.12</depend>
+  <depend>visualization_msgs</depend>
+  <depend>vision_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>tf2_ros</depend>
+  <depend>tf2</depend>
+  <depend>pcl_ros</depend>
+  <depend>tf2_eigen</depend>
+
+
   <depend>shelfino_gazebo</depend>
   <depend>shelfino_description</depend>
   <depend>shelfino_navigation</depend>
