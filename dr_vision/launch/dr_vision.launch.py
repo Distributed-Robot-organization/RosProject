@@ -16,9 +16,9 @@ def generate_launch_description():
         name='yolo_pcl_node',
         output='screen',
         parameters=[{
-            'rgb_image_topic': '/camera/image_raw',
-            'point_cloud_topic': '/camera/points',
-            'info_camera': '/camera/camera_info',
+            'rgb_image_topic': '/shelfino1/f_camera/image_raw',
+            'point_cloud_topic': '/shelfino1/f_camera/points',
+            'info_camera': '/shelfino1/f_camera/camera_info',
             'detection_image_topic': 'dr_vision/yolo_detection_image',
             'detection_results_topic': 'dr_vision/yolo_detection_results'
         }]

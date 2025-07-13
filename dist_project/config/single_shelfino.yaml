@@ -42,8 +42,8 @@
 
     init_names: ["shelfino1", "pollo"] # Names of the robots to be spawned
     init_rand: [false, false] # If true, the robots will be spawned in random positions
-    init_x: [5.5, 10.5] # X position of the robots
-    init_y: [5.5, 5.5] # Y position of the robots
+    init_x: [1.0, 10.5] # X position of the robots
+    init_y: [4.5, 5.5] # Y position of the robots
     init_yaw: [0.0, 1.] # Yaw of the robots
 
     qos_overrides:
