@@ -8,12 +8,6 @@ from launch_ros.actions import Node
 from launch.actions import OpaqueFunction
 import yaml
 
-def print_env(context):
-    print(__file__)
-    for key in context.launch_configurations.keys():
-        print("\t", key, context.launch_configurations[key])
-    return
-
 def generate_launch_description():
     use_sim_time = LaunchConfiguration('use_sim_time', default='false')
     shelfino_name = ""
@@ -26,17 +20,14 @@ def generate_launch_description():
 
     return LaunchDescription([
         Node(
-            package='slam_toolbox',
-            executable='async_slam_toolbox_node',
-            name='slam_toolbox',
+            package='rviz2',
+            executable='rviz2',
+            name='rviz2',
             output='screen',
-            remappings=[
-                ('/scan', '/'+shelfino_name+'/scan'),
-                ('/odom', '/'+shelfino_name+'/odom')
-            ],
             parameters=[
                 {'use_sim_time': use_sim_time},  # or True, depending on your setup
-                get_package_share_directory('dist_project')+'/config/slam.yaml'
-            ]
+            ],
+            arguments=['-d',"/home/computer/src/Distributed_project/dist_project/config/overall_map.rviz"]
+
         )
 ])

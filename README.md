@@ -13,6 +13,8 @@ ros2 run nav2_map_server map_saver_cli -f my_map
 
 # Controllo dei transform frame
 ros2 run tf2_tools view_frames
+
+ros2 run rviz2 rviz2 -d /home/computer/src/Distributed_project/dist_project/config/overall_map.rviz
 ```
 
 per controllo con controller:

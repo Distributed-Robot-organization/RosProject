@@ -21,12 +21,14 @@ def print_env(context):
 def generate_launch_description():
     use_sim_time = LaunchConfiguration('use_sim_time', default='false')
     shelfino_name = LaunchConfiguration('shelfino_name', default='shelfino')
+    max_camera_depth = LaunchConfiguration('max_camera_depth', default="8.0")
+
 
     xacro_model = os.path.join(
         get_package_share_directory('dist_project'),
         'models','shelfino_test.xacro')
-
-    robot_desc = Command(['xacro ', xacro_model, ' robot_name:=', shelfino_name])
+    
+    robot_desc = Command(['xacro ', xacro_model, ' robot_name:=', shelfino_name," max_camera_depth:=", max_camera_depth])
 
     return LaunchDescription([
         DeclareLaunchArgument(

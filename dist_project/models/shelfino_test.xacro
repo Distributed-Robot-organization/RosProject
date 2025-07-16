@@ -2,21 +2,12 @@
 <robot name='shelfino' xmlns:xacro='http://www.ros.org/wiki/xacro'>
 
   <xacro:property name='PI_2' value='1.5707963267948966' />
+  <xacro:arg name="max_camera_depth" default="8.0" />
   <xacro:arg name="robot_name" default="X" />
 
 
   <!-- Define the macro for the whole shelfino -->
-  <xacro:macro name="shelfino" params='robot_name'>
-
-
-    <xacro:if value="${robot_name != 'X'}">
-        <xacro:property name="robot_name_slash" value="'${robot_name}/'" />
-    </xacro:if>
-    <xacro:unless value="${robot_name == 'X'}">
-        <xacro:property name="robot_name_slash" value="''" />
-    </xacro:unless>
-    <xacro:property name="robot_name_slash" value="${robot_name != 'X'}? '' : 'pollo'" />
-
+  <xacro:macro name="shelfino" params='robot_name max_camera_depth'>
 
       <xacro:include filename='shelfino_test/materials.xacro' />
 
@@ -34,5 +25,5 @@
   </xacro:macro>
 
   <!-- Instantiate the model -->
-  <xacro:shelfino robot_name="$(arg robot_name)" />
+  <xacro:shelfino robot_name="$(arg robot_name)" max_camera_depth="$(arg max_camera_depth)" />
 </robot>

@@ -35,16 +35,13 @@
 
 /**:
   ros__parameters:
-    map: hexagon # Maps can be "hexagon" or "rectangle"
-    dx: 10.0 # The width of the rectangle or the length of the hexagon's edges. Default edge used in hexagon.world is 12.0
-    dy: 20.0 # The height of the rectangle. Not used in hexagon maps
-    max_timeout: 3 # Maximum time to spawn the map. NOT MAINTAINED
+    map: "plane_2" # Maps can be "test_world" or "plane_2"
 
-    init_names: ["shelfino1", "shelfino2", "shelfino3"] # Names of the robots to be spawned
-    init_rand: [false, false, false] # If true, the robots will be spawned in random positions
-    init_x: [5.5, -5.5, 5.5] # X position of the robots
-    init_y: [5.5, -5.5, -5.5] # Y position of the robots
-    init_yaw: [0.0, 1.0, 2.0] # Yaw of the robots
+    init_names: ["shelfino1", "pollo"] # Names of the robots to be spawned
+    init_rand: [false, false] # If true, the robots will be spawned in random positions
+    init_x: [1.0, 10.5] # X position of the robots
+    init_y: [4.5, 5.5] # Y position of the robots
+    init_yaw: [0.0, 1.] # Yaw of the robots
 
     qos_overrides:
       /parameter_events:
@@ -53,3 +50,6 @@
           durability: transient_local
           history: keep_last
           reliability: reliable
+    
+shelfino_additions:
+  max_camera_depth: 8.0

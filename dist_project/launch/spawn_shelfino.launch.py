@@ -30,19 +30,20 @@ def start_shelfini(configs, shelfino_desc_pkg, shelfino_nav2_pkg):
 
     with open (configs["map_config"], 'r') as f:
         shelfino_config_yaml = yaml.load(f, Loader=yaml.FullLoader)
-        shelfino_config_yaml = shelfino_config_yaml["/**"]["ros__parameters"]
+        shelfino_config_yaml_ros = shelfino_config_yaml["/**"]["ros__parameters"]
         print(shelfino_config_yaml)
-        for shelfino in range(len(shelfino_config_yaml['init_names'])):
-            if shelfino_config_yaml['init_rand'][shelfino]:
+        for shelfino in range(len(shelfino_config_yaml_ros['init_names'])):
+            if shelfino_config_yaml_ros['init_rand'][shelfino]:
                 raise Exception(f"Shelfino {shelfino} is set to random pose, but should have been taken care of by the map generator")
 
-            shelfino_name = shelfino_config_yaml['init_names'][shelfino]
+            shelfino_name = shelfino_config_yaml_ros['init_names'][shelfino]
             if "evader" in shelfino_name or "pursuer" in shelfino_name:
                 continue
             shelfini_names.append(shelfino_name)
-            shelfino_pose_x = shelfino_config_yaml['init_x'][shelfino]
-            shelfino_pose_y = shelfino_config_yaml['init_y'][shelfino]
-            shelfino_pose_yaw = shelfino_config_yaml['init_yaw'][shelfino]
+            shelfino_pose_x = shelfino_config_yaml_ros['init_x'][shelfino]
+            shelfino_pose_y = shelfino_config_yaml_ros['init_y'][shelfino]
+            shelfino_pose_yaw = shelfino_config_yaml_ros['init_yaw'][shelfino]
+            max_camera_depth = shelfino_config_yaml["shelfino_additions"]["max_camera_depth"]
 
             print(f"Spawning {shelfino_name} at ({shelfino_pose_x}, {shelfino_pose_y}, {shelfino_pose_yaw})")
 
@@ -51,8 +52,9 @@ def start_shelfini(configs, shelfino_desc_pkg, shelfino_nav2_pkg):
                     os.path.join(configs["project_package"], 'launch', 'rsp_test.launch.py')
                 ]),
                 launch_arguments= {
-                    'use_sim_time': "true", #TODO ripristinare parametro se si vuole usare sul robot reale
+                    'use_sim_time': "true",
                     'shelfino_name': shelfino_name,
+                    "max_camera_depth" :str(max_camera_depth)
                 }.items()
             )
 
@@ -96,63 +98,6 @@ def start_shelfini(configs, shelfino_desc_pkg, shelfino_nav2_pkg):
                 output='screen',
                 namespace=shelfino_name,
             )
-            
-            depth_perception_corrections_nodes = [
-                
-                ComposableNodeContainer(
-                    name='depth_proc_container',
-                    namespace=shelfino_name,
-                    package='rclcpp_components',
-                    executable='component_container_mt',
-                    composable_node_descriptions=[
-                        ComposableNode(
-                            package='depth_image_proc',
-                            plugin='depth_image_proc::PointCloudXyzNode',
-                            name='point_cloud_xyz_node',
-                            remappings=[
-                                ('image_rect', '/f_camera/depth/image_raw'),
-                                ('camera_info', '/f_camera/depth/camera_info'),
-                                ('points', '/f_camera/depth/points')
-                            ]
-                        )
-                    ],
-                    output='screen'
-                ),
-    
-                # # Depth Image to PointCloud conversion
-                # Node(
-                #     package='depth_image_proc',
-                #     executable='point_cloud_xyz',
-                #     name='depth_to_cloud',
-                #     remappings=[
-                #         ('image_rect', '/f_camera/depth/image_raw'),
-                #         ('camera_info', '/f_camera/depth/camera_info'),
-                #         ('points', '/f_camera/depth/points')
-                #     ],
-                #     namespace=shelfino_name,
-                #     output='screen'
-                # ),
-
-                # Passthrough filter to remove out-of-bounds depth points
-                Node(
-                    package='pcl_ros',
-                    executable='passthrough',
-                    name='z_filter',
-                    parameters=[{
-                        'filter_field_name': 'z',
-                        'filter_limit_min': 0.05,
-                        'filter_limit_max': 8.0,
-                        'filter_limit_negative': False
-                    }],
-                    remappings=[
-                        ('cloud_in', '/f_camera/points'),
-                        ('cloud_out', '/f_camera/points_filtered')
-                    ],
-                    namespace=shelfino_name,
-                    output='screen'
-                )
-            ]
-
 
             nodes += [
                 rsp_launch_file,
@@ -273,7 +218,7 @@ def generate_launch_description():
 
 
     configs["nav2_params_file_path_template"] = os.path.join(dist_project_pkg, 'config', 'shelfino_nav.yaml')
-    configs["map_config"] = os.path.join(dist_project_pkg, 'config', 'single_shelfino.yaml')
+    configs["map_config"] = os.path.join(dist_project_pkg, 'config', 'shelfino_params.yaml')
     configs["project_package"] = dist_project_pkg
 
     # General arguments
@@ -321,7 +266,8 @@ def generate_launch_description():
             'spawn_shelfino': 'false',
         }.items()
     )
-    if len(shelfini_names)==2:
+
+    """ if len(shelfini_names)==2:
         nodes_to_launch+=[
             Node(
                 package='rviz2',
@@ -333,8 +279,5 @@ def generate_launch_description():
                     {'use_sim_time': "true" if configs['use_sim_time'] == 'true' else "false"}
                 ],
             )
-        ]
-
-
-
+        ] """
     return LaunchDescription(nodes_to_launch+[gazebo_launch])

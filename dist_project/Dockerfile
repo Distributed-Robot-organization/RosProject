@@ -16,6 +16,7 @@ RUN apt-get update \
     ros-humble-rtabmap-*\
     ros-humble-pcl-*\
     libcpl-dev\
+    gdb\
     && rm -rf /var/lib/apt/lists/*
 
 #ros-humble-turtlebot3* \
@@ -29,10 +30,10 @@ RUN apt-get update \
 # Set the environment variable required to run TurtleBot3
 #ENV TURTLEBOT3_MODEL=burger
 #ENV RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-RUN echo 'alias refresh="source install/setup.bash"' >> ~/.bashrc
-RUN echo 'alias build="colcon build --symlink-install && source install/setup.bash"' >> ~/.bashrc
+RUN echo 'alias refresh="source install/setup.bash"' >> ~/.bash_aliases
+RUN echo 'alias build="colcon build --symlink-install && source install/setup.bash"' >> ~/.bash_aliases
 RUN echo 'clean_build(){\
     rm -rf build install log \
     build\
-    }' >> ~/.bashrc
+    }' >> ~/.bash_aliases
 RUN echo 'source /opt/ros/humble/setup.bash' >> ~/.bashrc

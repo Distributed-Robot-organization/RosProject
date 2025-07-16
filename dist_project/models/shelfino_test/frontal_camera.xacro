@@ -59,13 +59,13 @@
       <camera>
         <horizontal_fov>1.089</horizontal_fov>
         <image>
-            <format>R8G8B8</format>
+            <format>B8G8R8</format>
             <width>640</width>
             <heigth>480</heigth>
         </image>
         <clip>
             <near>0.05</near>
-            <far>8.00</far>
+            <far>${max_camera_depth}</far>
         </clip>
       </camera>
 
