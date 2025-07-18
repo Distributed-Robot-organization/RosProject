@@ -20,6 +20,8 @@ find_package(nav2_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(vision_msgs)
 find_package(pcl_ros REQUIRED)
+find_package(interfaces_pkg REQUIRED)
+
 
 find_package(PCL REQUIRED COMPONENTS common io filters)
 
@@ -28,34 +30,7 @@ include_directories(${PCL_INCLUDE_DIRS})
 link_directories(${PCL_LIBRARY_DIRS})
 add_definitions(${PCL_DEFINITIONS})
 
-# Test Files Compilation
-
-#--------
-add_executable (pcl_visualizer_demo src/cloud_viewer2.cpp)
-target_link_libraries (pcl_visualizer_demo ${PCL_LIBRARIES})
-install(TARGETS
-pcl_visualizer_demo
-  DESTINATION lib/${PROJECT_NAME})
-#-------
-add_executable (no_plane src/no_plane.cpp)
-target_link_libraries (no_plane ${PCL_LIBRARIES})
-install(TARGETS
-no_plane
-  DESTINATION lib/${PROJECT_NAME})
-#------
-add_executable (voxels src/voxels.cpp)
-target_link_libraries (voxels ${PCL_LIBRARIES})
-install(TARGETS
-voxels
-  DESTINATION lib/${PROJECT_NAME})
-#------
-add_executable (clustering src/generic_clustering.cpp)
-target_link_libraries (clustering ${PCL_LIBRARIES})
-install(TARGETS
-clustering
-  DESTINATION lib/${PROJECT_NAME})
-
-#------
+#<<<< Cluster Filter Node ####
 
 add_executable (pcl_filter_node
    src/nodes/pcl_filter.cpp)
@@ -66,17 +41,20 @@ target_link_libraries (pcl_filter_node ${PCL_LIBRARIES})
 install(TARGETS
 pcl_filter_node
   DESTINATION lib/${PROJECT_NAME})
+#### Cluster Filter Node [END] >>>#
 
+#<<<< Cluster Finder NodeS ####
+add_executable (first_cluster_publisher
+   src/nodes/first_cluster_publisher.cpp)
 
+ament_target_dependencies(first_cluster_publisher rclcpp tf2_ros tf2 tf2_eigen sensor_msgs visualization_msgs geometry_msgs interfaces_pkg)
 
-
-add_executable(viewer src/cloud_viewer.cpp)
-ament_target_dependencies(viewer ${PCL_LIBRAREIS})
-target_link_libraries (viewer ${PCL_LIBRARIES})
+target_link_libraries (first_cluster_publisher)
 install(TARGETS
-viewer
+first_cluster_publisher
   DESTINATION lib/${PROJECT_NAME})
 
+#### Cluster Finder NodeS [END] >>>#
 
 
 install(DIRECTORY

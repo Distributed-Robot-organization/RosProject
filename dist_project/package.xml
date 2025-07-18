@@ -34,6 +34,8 @@
   <depend>tf2</depend>
   <depend>pcl_ros</depend>
   <depend>tf2_eigen</depend>
+  <depend>interfaces_pkg</depend>
+
 
 
   <depend>shelfino_gazebo</depend>
