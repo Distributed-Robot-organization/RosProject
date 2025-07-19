@@ -40,7 +40,7 @@ def generate_launch_description():
                     {'use_sim_time': use_sim_time},  # or True, depending on your setup
                     {"cloud_topic":"/"+shelfino_name+"/f_camera/points"},
                     {"camera_max_depth":  shelfino_config_yaml["shelfino_additions"]["max_camera_depth"]},
-                    {"world_frame":"map"}z
+                    {"world_frame":"map"}
                 ]
             ))
         

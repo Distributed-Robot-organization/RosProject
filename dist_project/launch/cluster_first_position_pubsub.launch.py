@@ -31,16 +31,16 @@ def generate_launch_description():
             
             nodes_to_launch.append(Node(
                 package='dist_project',
-                executable='pcl_filter_node',
-                name='pcl_filter_node',
+                executable='first_cluster_publisher',
+                name='first_cluster_publisher',
                 output='screen',
                 #prefix=['gdb -ex run --args'],
                 namespace = shelfino_name,
                 parameters=[
                     {'use_sim_time': use_sim_time},  # or True, depending on your setup
-                    {"cloud_topic":"/"+shelfino_name+"/f_camera/points"},
-                    {"camera_max_depth":  shelfino_config_yaml["shelfino_additions"]["max_camera_depth"]},
-                    {"world_frame":"map"}z
+                    {"robot_id":shelfino_name},
+                    {"cluster_pos_pub": shelfino_config_yaml["/**"]["topics"]["cluster_position_pub"]},
+                    {"f_cluster_in":f'{shelfino_config_yaml["/**"]["topics"]["f_cluster_in"]}'}
                 ]
             ))
         

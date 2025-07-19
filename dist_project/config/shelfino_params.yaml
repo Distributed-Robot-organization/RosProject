@@ -51,8 +51,8 @@
           history: keep_last
           reliability: reliable
   topics:
-    cluster_position: "c_position"
-    first_cluster_msgs_in: "f_cluster_in"
+    cluster_position_pub: "c_position"
+    f_cluster_in: "median"
       
 shelfino_additions:
   max_camera_depth: 8.0
