@@ -14,10 +14,10 @@ public:
     {
         RCLCPP_INFO(this->get_logger(), "Setting up publishers");
         robot_id_ = this->declare_parameter<std::string>("robot_id", "robot_id");
-        std::string topic_f_cluster_out = this->declare_parameter<std::string>("cluster_pos_pub", "f_cluster_out");
-        std::string topic_f_cluster_in = this->declare_parameter<std::string>("f_cluster_in", "cluster_med_point");
-        cloud_point_subscriber_ = this->create_subscription<visualization_msgs::msg::Marker>(topic_f_cluster_in, 10, std::bind(&ClusterConvergence::subscribe_callback, this, std::placeholders::_1));
-        publisher_ = this->create_publisher<interfaces_pkg::msg::RobotPose>(topic_f_cluster_out, 1);
+        std::string topic_pose_out = this->declare_parameter<std::string>("cluster_pose", "f_cluster_out");
+        std::string topic_centroid_point_in = this->declare_parameter<std::string>("cluster_centroid", "cluster_med");
+        cloud_point_subscriber_ = this->create_subscription<visualization_msgs::msg::Marker>(topic_centroid_point_in, 10, std::bind(&ClusterConvergence::subscribe_callback, this, std::placeholders::_1));
+        publisher_ = this->create_publisher<interfaces_pkg::msg::RobotPose>(topic_pose_out, 1);
     }
 
 private:
@@ -47,9 +47,9 @@ private:
         message.pose.header.stamp = this->now();
         message.pose.header.frame_id = "map";
 
-        message.pose.pose.position.x = received_message_.points[0].x;
+        message.pose.pose.position.x = received_message_.points[0].x; // Replace with real pose
         message.pose.pose.position.y = received_message_.points[0].y;
-        message.pose.pose.position.z = 0;
+        message.pose.pose.position.z = received_message_.points[0].z;
 
         double yaw = 1.57; // 90 deg in rad
 

@@ -22,7 +22,7 @@
 #include <tf2/convert.h>
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2/transform_datatypes.h>
-#include <tf2_eigen/tf2_eigen.h>
+#include <tf2_eigen/tf2_eigen.hpp>
 #include <tf2_ros/transform_broadcaster.h>
 #include <tf2_ros/transform_listener.h>
 
@@ -273,17 +273,14 @@ private:
             extract.setNegative(false);
             // Get the points associated with the planar surface
             extract.filter(*cloud_plane);
-            std::cout << "PointCloud representing the planar component: " << cloud_plane->size() << " data points." << std::endl;
+            //std::cout << "PointCloud representing the planar component: " << cloud_plane->size() << " data points." << std::endl;
             // Remove the planar inliers, extract the rest
             extract.setNegative(true);
             extract.filter(*cloud_f);
             *tf_filtered_pcl_ptr = *cloud_f;
         }
 
-        bool no_detectable_cluster = false;
-        if (tf_filtered_pcl_ptr->size() == 0)
-            no_detectable_cluster = true;
-        else
+        if (tf_filtered_pcl_ptr->size() != 0)
         {
             // Creating the KdTree object for the search method of the extraction
             pcl::search::KdTree<pcl_t>::Ptr tree(new pcl::search::KdTree<pcl_t>);
@@ -300,9 +297,7 @@ private:
             ec.setInputCloud(tf_filtered_pcl_ptr);
             ec.extract(cluster_indices);
 
-            int j = 0;
             pcl::PointIndices merged_indices;
-            int pcl_filtered_size = 0;
             pcl::PointIndices cluster;
 
             int max_detected = 0;
@@ -358,7 +353,7 @@ private:
         // Get duration and log to console
         auto stop = std::chrono::high_resolution_clock::now();
         auto t_ms = std::chrono::duration_cast<std::chrono::milliseconds>(stop - start);
-        RCLCPP_INFO(get_logger(), "Time (msec): %ld", t_ms.count());
+        //RCLCPP_INFO(get_logger(), "Time (msec): %ld", t_ms.count());
     } // cloud_callback
 
     /**

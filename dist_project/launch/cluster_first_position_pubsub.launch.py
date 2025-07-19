@@ -39,8 +39,24 @@ def generate_launch_description():
                 parameters=[
                     {'use_sim_time': use_sim_time},  # or True, depending on your setup
                     {"robot_id":shelfino_name},
-                    {"cluster_pos_pub": shelfino_config_yaml["/**"]["topics"]["cluster_position_pub"]},
-                    {"f_cluster_in":f'{shelfino_config_yaml["/**"]["topics"]["f_cluster_in"]}'}
+                    {"cluster_pose": shelfino_config_yaml["/**"]["topics"]["cluster_pose"]},
+                    {"cluster_centroid":f'{shelfino_config_yaml["/**"]["topics"]["cluster_centroid"]}'}
+                ]
+            ))
+            other_shelfinos = [x for x in shelfino_ros_config['init_names'] if x!=shelfino_name]
+            nodes_to_launch.append(Node(
+                package='dist_project',
+                executable='first_cluster_subscriber',
+                name='first_cluster_subscriber',
+                output='screen',
+                #prefix=['gdb -ex run --args'],
+                namespace = shelfino_name,
+                parameters=[
+                    {'use_sim_time': use_sim_time},  # or True, depending on your setup
+                    {"robot_id":shelfino_name},
+                    {"cluster_pose_topic": shelfino_config_yaml["/**"]["topics"]["cluster_pose"]},
+                    {"other_shelfino_ids":other_shelfinos},
+                    {"nav2_nav2pose_topic", "compute_path_to_pose"}
                 ]
             ))
         

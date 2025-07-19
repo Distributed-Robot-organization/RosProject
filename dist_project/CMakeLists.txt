@@ -54,6 +54,16 @@ install(TARGETS
 first_cluster_publisher
   DESTINATION lib/${PROJECT_NAME})
 
+add_executable (first_cluster_subscriber
+   src/nodes/first_cluster_subscriber.cpp)
+
+ament_target_dependencies(first_cluster_subscriber rclcpp tf2_ros tf2 tf2_eigen sensor_msgs visualization_msgs geometry_msgs nav2_msgs interfaces_pkg)
+
+target_link_libraries (first_cluster_subscriber)
+install(TARGETS
+first_cluster_subscriber
+  DESTINATION lib/${PROJECT_NAME})
+
 #### Cluster Finder NodeS [END] >>>#
 
 

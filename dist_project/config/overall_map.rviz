@@ -10,6 +10,7 @@ Panels:
         - /RobotModel1/Description Topic1
         - /PointCloud21
         - /PointCloud22
+        - /PointCloud24
         - /TF1
       Splitter Ratio: 0.5
     Tree Height: 1251
@@ -345,7 +346,7 @@ Visualization Manager:
       Axis: Z
       Channel Name: intensity
       Class: rviz_default_plugins/PointCloud2
-      Color: 0; 255; 0
+      Color: 255; 85; 255
       Color Transformer: FlatColor
       Decay Time: 0
       Enabled: true
@@ -472,10 +473,10 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.7104012966156006
+      Pitch: 0.4254014790058136
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 2.9320805072784424
+      Yaw: 2.462080717086792
     Saved: ~
 Window Geometry:
   Displays:
