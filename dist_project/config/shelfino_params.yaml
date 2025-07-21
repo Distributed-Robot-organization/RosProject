@@ -36,12 +36,11 @@
 /**:
   ros__parameters:
     map: "plane_2" # Maps can be "test_world" or "plane_2"
-
     init_names: ["shelfino1", "pollo"] # Names of the robots to be spawned
     init_rand: [false, false] # If true, the robots will be spawned in random positions
     init_x: [9.3, 1.02] # X position of the robots
     init_y: [1.2, 12.0] # Y position of the robots
-    init_yaw: [1., 0.] # Yaw of the robots
+    init_yaw: [0.65, 0.] # Yaw of the robots
 
     # init_names: ["shelfino1"] # Names of the robots to be spawned
     # init_rand: [false] # If true, the robots will be spawned in random positions
@@ -62,7 +61,7 @@ topics:
   cluster_pcl: "cluster_pcl"
   cluster_centroid: "median"
   voxel_estimate: "voxel_estimate"
-  
+
 filter_params:
   voxel_leaf_size: 0.05
       
