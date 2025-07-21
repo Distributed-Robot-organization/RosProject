@@ -56,6 +56,7 @@ typedef pcl::PointXYZRGB pcl_t;
  *
  */
 
+ // Unused
 bool enforceNormalOrIntensitySimilarity(const pcl::PointXYZRGBNormal &point_a, const pcl::PointXYZRGBNormal &point_b, float /*squared_distance*/)
 {
     Eigen::Map<const Eigen::Vector3f> point_a_normal = point_a.getNormalVector3fMap(), point_b_normal = point_b.getNormalVector3fMap();
@@ -71,30 +72,23 @@ public:
                                                     .allow_undeclared_parameters(true)
                                                     .automatically_declare_parameters_from_overrides(true))
     {
-        /*
-         * SET UP PUBLISHERS
-         */
-        RCLCPP_INFO(this->get_logger(), "Setting up publishers");
 
-        clustered_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("clustered", 1);
-        segmented_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("segmented", 1);
-        pre_filter_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("pre_filter", 1);
-        centroid_pub_ = this->create_publisher<visualization_msgs::msg::Marker>("centroid", 1);
-        median_pub_ = this->create_publisher<visualization_msgs::msg::Marker>("median", 1);
 
         /*
          * SET UP PARAMETERS (COULD BE INPUT FROM LAUNCH FILE/TERMINAL)
          */
         rclcpp::Parameter cloud_topic_param,
-            world_frame_param, camera_frame_param, voxel_leaf_size_param,
+            voxel_leaf_size_param,
             cluster_tolerance_param, min_cluster_size_param, max_cluster_size_param, plane_max_tree_iterations_param, plane_distance_treshold_param,
-            z_filter_max_param, max_camera_depth_param;
+            z_filter_max_param, max_camera_depth_param, topic_pcl_filtered_param, world_frame_param, topic_cluster_pcl_param;
 
         RCLCPP_INFO(this->get_logger(), "Getting parameters");
 
-        this->get_parameter_or("cloud_topic", cloud_topic_param, rclcpp::Parameter("", "/points"));
-        this->get_parameter_or("world_frame", world_frame_param, rclcpp::Parameter("", "laser_data_frame"));
-        this->get_parameter_or("camera_frame", camera_frame_param, rclcpp::Parameter("", "laser_data_frame"));
+        this->get_parameter_or("topic_pcl_raw", cloud_topic_param, rclcpp::Parameter("", "/points"));
+        this->get_parameter_or("topic_pcl_filtered", topic_pcl_filtered_param, rclcpp::Parameter("", "laser_data_frame"));
+        this->get_parameter_or("world_frame", world_frame_param, rclcpp::Parameter("", "map"));
+        this->get_parameter_or("topic_cluster_pcl", topic_cluster_pcl_param, rclcpp::Parameter("", "topic_cluster_pcl"));
+
         this->get_parameter_or("max_camera_depth", max_camera_depth_param, rclcpp::Parameter("", 8.0));
 
         this->get_parameter_or("cluster_tolerance", cluster_tolerance_param, rclcpp::Parameter("", 0.02));
@@ -106,9 +100,11 @@ public:
         this->get_parameter_or("z_filter_max", z_filter_max_param, rclcpp::Parameter("", 8.0));
         this->get_parameter_or("voxel_leaf_size", voxel_leaf_size_param, rclcpp::Parameter("", 0.25));
 
-        cloud_topic = cloud_topic_param.as_string();
+        topic_pcl_raw = cloud_topic_param.as_string();
+        topic_pcl_filtered_ = topic_pcl_filtered_param.as_string();
         world_frame = world_frame_param.as_string();
-        camera_frame = camera_frame_param.as_string();
+        topic_cluster_pcl_ = topic_cluster_pcl_param.as_string();
+
         voxel_leaf_size = float(voxel_leaf_size_param.as_double());
         cluster_tolerance = cluster_tolerance_param.as_double();
         min_cluster_size = min_cluster_size_param.as_int();
@@ -121,10 +117,18 @@ public:
          * SET UP SUBSCRIBER
          */
         RCLCPP_INFO(this->get_logger(), "Setting up subscriber");
-
         cloud_subscriber_ =
             this->create_subscription<sensor_msgs::msg::PointCloud2>(
-                cloud_topic, 1, std::bind(&MinimalPointCloudProcessor::cloud_callback, this, std::placeholders::_1));
+                topic_pcl_raw, 1, std::bind(&MinimalPointCloudProcessor::cloud_callback, this, std::placeholders::_1));
+
+        /*
+         * SET UP PUBLISHERS
+         */
+        RCLCPP_INFO(this->get_logger(), "Setting up publishers");
+        clustered_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>(topic_cluster_pcl_, 1);
+        pre_filter_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>(topic_pcl_filtered_, 1);
+        centroid_pub_ = this->create_publisher<visualization_msgs::msg::Marker>("centroid", 1);
+        median_pub_ = this->create_publisher<visualization_msgs::msg::Marker>("median", 1);
 
         /*
          * SET UP TF. Optional for transforming between coordinate frames
@@ -140,7 +144,6 @@ private:
      * Subscriber and Publisher declaration
      */
     rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr cloud_subscriber_;
-    rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr segmented_pub_;
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pre_filter_pub_;
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr clustered_pub_;
     rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr centroid_pub_;
@@ -149,7 +152,10 @@ private:
     /*
      * Parameters
      */
-    std::string cloud_topic;
+    std::string topic_pcl_raw;
+    std::string topic_pcl_filtered_;
+    std::string topic_cluster_pcl_;
+
     std::string world_frame;
     std::string camera_frame;
 
@@ -184,6 +190,8 @@ private:
         // Use for timing callback execution time
         auto start = std::chrono::high_resolution_clock::now();
         std::vector<Eigen::Vector4f> centroid_vect;
+        bool error = false;
+
 
         // Transform for pointcloud in world frame
         geometry_msgs::msg::TransformStamped stransform;
@@ -256,7 +264,7 @@ private:
         seg.setMethodType(pcl::SAC_RANSAC);
         seg.setMaxIterations(plane_max_tree_iterations);
         seg.setDistanceThreshold(plane_distance_treshold);
-        while (tf_filtered_pcl_ptr->size() > 0.1 * nr_points)
+        while (tf_filtered_pcl_ptr->size() > 0.1 * nr_points && !error)
         {
             // Segment the largest planar component from the remaining cloud
             seg.setInputCloud(tf_filtered_pcl_ptr);
@@ -268,6 +276,7 @@ private:
             }
             // Extract the planar inliers from the input cloud
             pcl::ExtractIndices<pcl_t> extract;
+            try{
             extract.setInputCloud(tf_filtered_pcl_ptr);
             extract.setIndices(inliers);
             extract.setNegative(false);
@@ -278,6 +287,13 @@ private:
             extract.setNegative(true);
             extract.filter(*cloud_f);
             *tf_filtered_pcl_ptr = *cloud_f;
+            }
+            catch (const pcl::PCLException &ex)
+            {
+                // sporadically it gives the Assertion `point_representation_->isValid (point) && "Invalid (NaN, Inf) point coordinates given to radiusSearch!"' failed.
+
+                RCLCPP_ERROR(this->get_logger(), "At line %d %s", ex.getLineNumber(), ex.what());
+            }
         }
 
         if (tf_filtered_pcl_ptr->size() != 0)
@@ -287,67 +303,76 @@ private:
             pcl::EuclideanClusterExtraction<pcl_t> ec;
             std::vector<pcl::PointIndices> cluster_indices;
             // There are no point remaining in the point cloud to clusterize
-            tree->setInputCloud(tf_filtered_pcl_ptr);
-
-            ec.setClusterTolerance(cluster_tolerance); // 2cm
-            ec.setMinClusterSize(min_cluster_size);
-
-            ec.setMaxClusterSize(max_cluster_size);
-            ec.setSearchMethod(tree);
-            ec.setInputCloud(tf_filtered_pcl_ptr);
-            ec.extract(cluster_indices);
-
-            pcl::PointIndices merged_indices;
-            pcl::PointIndices cluster;
-
-            int max_detected = 0;
-            pcl::PointIndices biggest_cluster_indices;
-
-            for (const auto &cluster : cluster_indices)
+            try
             {
-                if (max_detected < cluster.indices.size())
+                tree->setInputCloud(tf_filtered_pcl_ptr);
+
+                ec.setClusterTolerance(cluster_tolerance); // 2cm
+                ec.setMinClusterSize(min_cluster_size);
+                ec.setMaxClusterSize(max_cluster_size);
+                ec.setSearchMethod(tree);
+                ec.setInputCloud(tf_filtered_pcl_ptr);
+                ec.extract(cluster_indices);
+            }
+            catch (const pcl::PCLException &ex)
+            {
+                // sporadically it gives the Assertion `point_representation_->isValid (point) && "Invalid (NaN, Inf) point coordinates given to radiusSearch!"' failed.
+
+                RCLCPP_ERROR(this->get_logger(), "At line %d %s", ex.getLineNumber(), ex.what());
+            }
+            if(!error){
+
+                pcl::PointIndices merged_indices;
+                pcl::PointIndices cluster;
+
+                int max_detected = 0;
+                pcl::PointIndices biggest_cluster_indices;
+
+                for (const auto &cluster : cluster_indices)
                 {
-                    max_detected = cluster.indices.size();
-                    biggest_cluster_indices = cluster;
+                    if (max_detected < int(cluster.indices.size()))
+                    {
+                        max_detected = cluster.indices.size();
+                        biggest_cluster_indices = cluster;
+                    }
+                }
+
+                pcl::PointCloud<pcl_t>::Ptr clustered_pcl(new pcl::PointCloud<pcl_t>);
+
+                for (const auto &idx : biggest_cluster_indices.indices)
+                {
+                    clustered_pcl->push_back((*tf_filtered_pcl_ptr)[idx]);
+                }
+                clustered_pcl->width = clustered_pcl->size();
+                clustered_pcl->height = 1;
+                clustered_pcl->is_dense = true;
+                Eigen::Vector4f centroid;
+                pcl::compute3DCentroid(*clustered_pcl, centroid);
+                centroid_vect.push_back(centroid);
+                std_msgs::msg::ColorRGBA centroid_color;
+                centroid_color.a = 1.0f;
+                centroid_color.r = .5f;
+                centroid_color.g = .5f;
+                centroid_color.b = 0.0f;
+
+                Eigen::Vector4f median_point = computeMedianPoint(clustered_pcl);
+                std::vector<Eigen::Vector4f> median_vect;
+                median_vect.push_back(median_point);
+                std_msgs::msg::ColorRGBA median_color;
+                median_color.a = 1.0f;
+                median_color.r = .5f;
+                median_color.g = .5f;
+                median_color.b = 0.5f;
+
+                // /* ========================================
+                //  * CONVERT PointCloud2 PCL->ROS, PUBLISH CLOUD
+                //  * ========================================*/
+                
+                this->publishPointCloud(clustered_pub_, *clustered_pcl);
+                this->publishMarker(centroid_pub_, centroid_vect, centroid_color);
+                this->publishMarker(median_pub_, median_vect, median_color);
                 }
             }
-
-
-            pcl::PointCloud<pcl_t>::Ptr clustered_pcl(new pcl::PointCloud<pcl_t>);
-
-            for (const auto &idx : biggest_cluster_indices.indices)
-            {
-                clustered_pcl->push_back((*tf_filtered_pcl_ptr)[idx]);
-            }
-            clustered_pcl->width = clustered_pcl->size();
-            clustered_pcl->height = 1;
-            clustered_pcl->is_dense = true;
-            Eigen::Vector4f centroid;
-            pcl::compute3DCentroid(*clustered_pcl, centroid);
-            centroid_vect.push_back(centroid);
-            std_msgs::msg::ColorRGBA centroid_color;
-            centroid_color.a = 1.0f;
-            centroid_color.r = .5f;
-            centroid_color.g = .5f;
-            centroid_color.b = 0.0f;
-
-            Eigen::Vector4f median_point = computeMedianPoint(clustered_pcl);
-            std::vector<Eigen::Vector4f> median_vect;
-            median_vect.push_back(median_point);
-            std_msgs::msg::ColorRGBA median_color;
-            median_color.a = 1.0f;
-            median_color.r = .5f;
-            median_color.g = .5f;
-            median_color.b = 0.5f;
-
-            // /* ========================================
-            //  * CONVERT PointCloud2 PCL->ROS, PUBLISH CLOUD
-            //  * ========================================*/
-            // this->publishPointCloud(segmented_pub_, *plane_seg_cloud);
-            this->publishPointCloud(clustered_pub_, *clustered_pcl);
-            this->publishMarker(centroid_pub_, centroid_vect, centroid_color);
-            this->publishMarker(median_pub_, median_vect, median_color);
-        }
         this->publishPointCloud(pre_filter_pub_, tf_filtered_pcl);
 
         // Get duration and log to console

@@ -26,11 +26,12 @@ find_package(interfaces_pkg REQUIRED)
 find_package(PCL REQUIRED COMPONENTS common io filters)
 
 
+include_directories(${catkin_INCLUDE_DIRS})
 include_directories(${PCL_INCLUDE_DIRS})
 link_directories(${PCL_LIBRARY_DIRS})
 add_definitions(${PCL_DEFINITIONS})
 
-#<<<< Cluster Filter Node ####
+#<<<< Cluster Filter Node ---
 
 add_executable (pcl_filter_node
    src/nodes/pcl_filter.cpp)
@@ -41,7 +42,7 @@ target_link_libraries (pcl_filter_node ${PCL_LIBRARIES})
 install(TARGETS
 pcl_filter_node
   DESTINATION lib/${PROJECT_NAME})
-#### Cluster Filter Node [END] >>>#
+#--- Cluster Filter Node [END] >>>#
 
 #<<<< Cluster Finder NodeS ####
 add_executable (first_cluster_publisher
@@ -65,6 +66,21 @@ first_cluster_subscriber
   DESTINATION lib/${PROJECT_NAME})
 
 #### Cluster Finder NodeS [END] >>>#
+
+#<<<< cloud2voxel Node ---
+
+add_executable (cloud2voxel
+   src/nodes/cloud2voxel.cpp)
+
+ament_target_dependencies(cloud2voxel pcl_conversions rclcpp tf2_ros tf2 tf2_eigen sensor_msgs visualization_msgs geometry_msgs pcl_ros)
+
+target_link_libraries (cloud2voxel ${catkin_LIBRARIES} ${PCL_LIBRARIES})
+install(TARGETS
+cloud2voxel
+  DESTINATION lib/${PROJECT_NAME})
+#--- cloud2voxel Node [END] >>>#
+
+
 
 
 install(DIRECTORY

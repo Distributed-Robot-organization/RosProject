@@ -39,9 +39,15 @@
 
     init_names: ["shelfino1", "pollo"] # Names of the robots to be spawned
     init_rand: [false, false] # If true, the robots will be spawned in random positions
-    init_x: [1.0, 10.5] # X position of the robots
-    init_y: [4.5, 5.5] # Y position of the robots
-    init_yaw: [0.0, 1.] # Yaw of the robots
+    init_x: [9.3, 1.02] # X position of the robots
+    init_y: [1.2, 12.0] # Y position of the robots
+    init_yaw: [1., 0.] # Yaw of the robots
+
+    # init_names: ["shelfino1"] # Names of the robots to be spawned
+    # init_rand: [false] # If true, the robots will be spawned in random positions
+    # init_x: [5.0] # X position of the robots
+    # init_y: [4.5] # Y position of the robots
+    # init_yaw: [0.0] # Yaw of the robots
 
     qos_overrides:
       /parameter_events:
@@ -50,9 +56,15 @@
           durability: transient_local
           history: keep_last
           reliability: reliable
-  topics:
-    cluster_pose: "c_position"
-    cluster_centroid: "median"
+topics:
+  filtered_pcl: "filtered_pcl"
+  cluster_pose: "c_position"
+  cluster_pcl: "cluster_pcl"
+  cluster_centroid: "median"
+  voxel_estimate: "voxel_estimate"
+  
+filter_params:
+  voxel_leaf_size: 0.05
       
 shelfino_additions:
   max_camera_depth: 8.0

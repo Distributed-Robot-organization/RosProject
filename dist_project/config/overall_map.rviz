@@ -10,6 +10,7 @@ Panels:
         - /RobotModel1/Description Topic1
         - /PointCloud21
         - /PointCloud22
+        - /PointCloud23
         - /PointCloud24
         - /TF1
       Splitter Ratio: 0.5
@@ -230,7 +231,7 @@ Visualization Manager:
         Filter size: 10
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /shelfino1/pre_filter
+        Value: /pollo/filtered_pcl
       Use Fixed Frame: true
       Use rainbow: true
       Value: true
@@ -264,7 +265,7 @@ Visualization Manager:
         Filter size: 10
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /pollo/pre_filter
+        Value: /shelfino1/filtered_pcl
       Use Fixed Frame: true
       Use rainbow: true
       Value: true
@@ -333,7 +334,7 @@ Visualization Manager:
         Filter size: 10
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /pollo/clustered
+        Value: /pollo/cluster_pcl
       Use Fixed Frame: true
       Use rainbow: true
       Value: true
@@ -367,7 +368,7 @@ Visualization Manager:
         Filter size: 10
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /shelfino1/clustered
+        Value: /shelfino1/cluster_pcl
       Use Fixed Frame: true
       Use rainbow: true
       Value: true
@@ -458,25 +459,25 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 21.061542510986328
+      Distance: 8.607337951660156
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 1.8390618562698364
-        Y: 1.8223568201065063
-        Z: 0.87225741147995
+        X: 5.892881870269775
+        Y: 8.468443870544434
+        Z: 3.6254334449768066
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.4254014790058136
+      Pitch: 0.6504017114639282
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 2.462080717086792
+      Yaw: 3.8920838832855225
     Saved: ~
 Window Geometry:
   Displays:

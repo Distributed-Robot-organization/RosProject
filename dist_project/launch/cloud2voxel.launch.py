@@ -25,24 +25,23 @@ def generate_launch_description():
     with open (configs["map_config"], 'r') as f:
         shelfino_config_yaml = yaml.load(f, Loader=yaml.FullLoader)
         shelfino_ros_config = shelfino_config_yaml["/**"]["ros__parameters"]
-        print(shelfino_config_yaml)
+        print(shelfino_ros_config)
         for shelfino in range(len(shelfino_ros_config['init_names'])):
             shelfino_name = shelfino_ros_config['init_names'][shelfino]
             
             nodes_to_launch.append(Node(
                 package='dist_project',
-                executable='pcl_filter_node',
-                name='pcl_filter_node',
+                executable='cloud2voxel',
+                name='cloud2voxel',
                 output='screen',
                 #prefix=['gdb -ex run --args'],
                 namespace = shelfino_name,
                 parameters=[
                     {'use_sim_time': use_sim_time},  # or True, depending on your setup
-                    {"topic_pcl_raw":"/"+shelfino_name+"/f_camera/points"},
-                    {"max_camera_depth":  shelfino_config_yaml["shelfino_additions"]["max_camera_depth"]},
-                    {"topic_pcl_filtered": shelfino_config_yaml["topics"]["filtered_pcl"]},
-                    {"topic_cluster_pcl": shelfino_config_yaml["topics"]["cluster_pcl"]},
-                    {"world_frame":"map"}
+                    {"robot_id":shelfino_name},
+                    {"pcl_input": shelfino_config_yaml["topics"]["cluster_pcl"]},
+                    {"voxel_topic_out":shelfino_config_yaml["topics"]["voxel_estimate"]},
+                    {"voxel_size":shelfino_config_yaml["filter_params"]["voxel_leaf_size"]}
                 ]
             ))
         
