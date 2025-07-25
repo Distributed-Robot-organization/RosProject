@@ -8,12 +8,17 @@ endif()
 # find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(geometry_msgs REQUIRED)
+find_package(std_msgs REQUIRED)
+
 
 find_package(rosidl_default_generators REQUIRED)
 #### ROS2 Interface Directives ####
 set(interface_files
   # Messages
   "msg/RobotPose.msg"
+  "msg/ProbabilityPoint.msg"
+  "msg/ProbabilityPcl.msg"
+
 )
 
 
@@ -21,6 +26,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   ${interface_files}
   DEPENDENCIES
   geometry_msgs
+  std_msgs
 )
 
 

@@ -67,6 +67,11 @@ d
             <near>0.05</near>
             <far>${max_camera_depth}</far>
         </clip>
+        <noise>
+            <type>gaussian</type>
+            <mean>0.0</mean>
+            <stddev>0.1</stddev>  <!-- Adjust for stronger/weaker noise -->
+        </noise>
       </camera>
 
       <plugin name="f_camera_controller" filename="libgazebo_ros_camera.so">

@@ -30,7 +30,7 @@ Panels:
     Experimental: false
     Name: Time
     SyncMode: 0
-    SyncSource: PointCloud2
+    SyncSource: ""
 Visualization Manager:
   Class: ""
   Displays:
@@ -442,7 +442,7 @@ Visualization Manager:
       Enabled: true
       Name: Marker
       Namespaces:
-        "": true
+        {}
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -455,7 +455,7 @@ Visualization Manager:
       Enabled: true
       Name: Marker
       Namespaces:
-        "": true
+        {}
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -525,25 +525,25 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 2.7241621017456055
+      Distance: 27.7724552154541
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 9.466144561767578
-        Y: 2.879051923751831
-        Z: 2.0890345573425293
+        X: 4.164334774017334
+        Y: 4.995674133300781
+        Z: -0.4158610701560974
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.4454014301300049
+      Pitch: 0.5004013776779175
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 3.3802459239959717
+      Yaw: 4.09024715423584
     Saved: ~
 Window Geometry:
   Displays:

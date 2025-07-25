@@ -69,15 +69,15 @@ first_cluster_subscriber
 
 #<<<< cloud2voxel Node ---
 
-add_executable (cloud2voxel
-   src/nodes/cloud2voxel.cpp)
+# add_executable (cloud2voxel
+#    src/nodes/cloud2voxel.cpp)
 
-ament_target_dependencies(cloud2voxel pcl_conversions rclcpp tf2_ros tf2 tf2_eigen sensor_msgs visualization_msgs geometry_msgs pcl_ros)
+# ament_target_dependencies(cloud2voxel pcl_conversions rclcpp tf2_ros tf2 tf2_eigen sensor_msgs visualization_msgs geometry_msgs pcl_ros)
 
-target_link_libraries (cloud2voxel ${catkin_LIBRARIES} ${PCL_LIBRARIES})
-install(TARGETS
-cloud2voxel
-  DESTINATION lib/${PROJECT_NAME})
+# target_link_libraries (cloud2voxel ${catkin_LIBRARIES} ${PCL_LIBRARIES})
+# install(TARGETS
+# cloud2voxel
+#   DESTINATION lib/${PROJECT_NAME})
 #--- cloud2voxel Node [END] >>>#
 
 
