@@ -69,7 +69,7 @@ public:
 
     // --- main-loop timer (e.g. 20 Hz) ---
     timer_ = create_wall_timer(
-        std::chrono::milliseconds(50),
+        std::chrono::seconds(3),
         [this]()
         { server_executor(); });
   }
@@ -125,19 +125,26 @@ private:
       RCLCPP_INFO(this->get_logger(), "received at least one pcl from each robot, starting voxel estimation");
       estimating_ = true;
       pcl_manager_->startEstimating();
+
+      std::ostringstream oss;
+      for(auto keyval1 :pcl_manager_->voxel_parameters_){
+        oss << keyval1.first << ":\n";
+        for (auto keyval2 : keyval1.second)
+        {
+          oss << keyval2.first << " : "<<keyval2.second;
+        }
+      }
+      RCLCPP_INFO(this->get_logger(), "voxel parameters \n%s", oss.str().c_str());
+      RCLCPP_INFO(this->get_logger(), "voxel Count %lu", pcl_manager_->voxel_cloud_->size());
     }
 
     if (estimating_)
     {
       point_2_norm_cloud_map_t *norm = new point_2_norm_cloud_map_t();
       pcl_manager_->getNormalizedCountPerVoxel(norm);
-      pcl::PointCloud<point_t>::Ptr voxel_cloud = pcl_manager_->voxel_cloud_;
       pcl::PointCloud<point_t>::Ptr raw_cloud = pcl_manager_->raw_cloud_;
-      RCLCPP_INFO(this->get_logger(), "voxel Count %d", voxel_cloud->size());
-
       RCLCPP_INFO(this->get_logger(), "raw Count %lu", raw_cloud->size());
-
-      publishVoxelEstimate(pub_, voxel_cloud, *norm, this->get_clock()->now());
+      publishVoxelEstimate(pub_, pcl_manager_->voxel_cloud_, *norm, this->get_clock()->now());
     }
   }
 };

@@ -11,16 +11,18 @@ CloudToVoxel::CloudToVoxel(float voxel_leaf_size)
 void CloudToVoxel::generateVoxels()
 {
     pcl::getMinMax3D(*this->raw_cloud_, p_min_, p_max_);
-
     // generating centroid of the voxels a bit outside of the cluster to have a bit of margin
+    // starting point of the voxels
     float s_x = p_min_.x - voxel_leaf_size_ / 2;
     float s_y = p_min_.y - voxel_leaf_size_ / 2;
     float s_z = p_min_.z - voxel_leaf_size_ / 2;
 
+    // end points of the voxels
+
     float e_x = (p_max_.x + voxel_leaf_size_ / 2);
     float e_y = (p_max_.y + voxel_leaf_size_ / 2);
     float e_z = (p_max_.z + voxel_leaf_size_ / 2);
-
+    //Number of iterations needed
     int it_x = std::ceil<int>((e_x - s_x) / voxel_leaf_size_);
     int it_y = std::ceil<int>((e_y - s_y) / voxel_leaf_size_);
     int it_z = std::ceil<int>((e_z - s_z) / voxel_leaf_size_);
@@ -31,7 +33,7 @@ void CloudToVoxel::generateVoxels()
 
     std::cout << p_min_ << " " << p_max_ << std::endl;
     std::cout << it_x << " " << it_y << " " << it_z << std::endl;
-
+    //populating
     for (int i = 0; i < it_x; i++)
     {
         for (int j = 0; j < it_y; j++)
@@ -43,6 +45,23 @@ void CloudToVoxel::generateVoxels()
             }
         }
     }
+    // Build the return map
+
+    voxel_parameters_["start"] = {
+        {"x", s_x},
+        {"y", s_y},
+        {"z", s_z}};
+
+    voxel_parameters_["end"] = {
+        {"x", e_x},
+        {"y", e_y},
+        {"z", e_z}};
+
+    voxel_parameters_["iters"] = {
+        {"x", static_cast<float>(it_x)},
+        {"y", static_cast<float>(it_y)},
+        {"z", static_cast<float>(it_z)}};
+
 }
 
 void CloudToVoxel::voxelDensityEstimate()
@@ -127,12 +146,15 @@ void publishVoxelEstimate(const rclcpp::Publisher<sensor_msgs::msg::PointCloud2>
 {
 
     // normalized vector between 0 and 1
-    pcl::PointCloud<point_t>::Ptr norm_vox_cloud(new pcl::PointCloud<point_t>((*cloud_voxel).width, (*cloud_voxel).height));
+    pcl::PointCloud<pcl::PointXYZRGBA>::Ptr norm_vox_cloud(new pcl::PointCloud<pcl::PointXYZRGBA>((*cloud_voxel).width, (*cloud_voxel).height));
     for (auto p : *cloud_voxel)
     {
         try
         {
-            point_t p_out = p;
+            pcl::PointXYZRGBA p_out;
+            p_out.x = p.x;
+            p_out.y = p.y;
+            p_out.z = p.z;
             p_out.g = uint8_t(255);
             p_out.b = uint8_t(255);
             p_out.r = uint8_t(255);

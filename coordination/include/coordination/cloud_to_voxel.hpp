@@ -9,7 +9,7 @@
 #include <interfaces_pkg/msg/probability_point.hpp>
 #include <interfaces_pkg/msg/probability_pcl.hpp>
 
-typedef pcl::PointXYZRGBA point_t;
+typedef pcl::PointXYZ point_t;
 typedef interfaces_pkg::msg::ProbabilityPcl pcl_msg_t;
 typedef interfaces_pkg::msg::ProbabilityPoint point_msg_t;
 
@@ -31,6 +31,7 @@ private:
     point_t p_min_, p_max_, centroid_;
     bool do_estimate_ = false;
     int maximum_count = 0;
+    std::map<std::string, std::map<std::string, float>> voxel_parameters_;
 
     void voxelDensityEstimate();
     void generateVoxels();

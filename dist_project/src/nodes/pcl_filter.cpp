@@ -11,6 +11,7 @@
 
 #include <exception>
 #include <stdexcept>
+#include <random>
 
 #include <rclcpp/qos.hpp>
 #include <rclcpp/rclcpp.hpp>
@@ -56,7 +57,7 @@ typedef pcl::PointXYZRGB pcl_t;
  *
  */
 
- // Unused
+// Unused
 bool enforceNormalOrIntensitySimilarity(const pcl::PointXYZRGBNormal &point_a, const pcl::PointXYZRGBNormal &point_b, float /*squared_distance*/)
 {
     Eigen::Map<const Eigen::Vector3f> point_a_normal = point_a.getNormalVector3fMap(), point_b_normal = point_b.getNormalVector3fMap();
@@ -72,7 +73,6 @@ public:
                                                     .allow_undeclared_parameters(true)
                                                     .automatically_declare_parameters_from_overrides(true))
     {
-
 
         /*
          * SET UP PARAMETERS (COULD BE INPUT FROM LAUNCH FILE/TERMINAL)
@@ -175,6 +175,21 @@ private:
     std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
     std::unique_ptr<tf2_ros::TransformBroadcaster> br;
 
+    // Adds Gaussian noise with given mean and stddev to the input point cloud in-place
+    void addGaussianNoiseToPointCloud(pcl::PointCloud<pcl_t>::Ptr cloud, float mean, float stddev)
+    {
+        // Random number generator for Gaussian noise
+        std::default_random_engine generator;
+        std::normal_distribution<float> distribution(mean, stddev);
+
+        for (auto &point : cloud->points)
+        {
+            // point.x += distribution(generator);
+            // point.y += distribution(generator);
+            point.z += distribution(generator);
+        }
+    }
+
     /**
      * @brief Callback when PointCloud2 message is received. Processes the data and
      *      publishes intermediate results. Make sure this callback
@@ -191,7 +206,6 @@ private:
         auto start = std::chrono::high_resolution_clock::now();
         std::vector<Eigen::Vector4f> centroid_vect;
         bool error = false;
-
 
         // Transform for pointcloud in world frame
         geometry_msgs::msg::TransformStamped stransform;
@@ -214,6 +228,7 @@ private:
         filtered_cloud->width = filtered_cloud->points.size();
         filtered_cloud->height = 1;
         filtered_cloud->is_dense = true;
+        this->addGaussianNoiseToPointCloud(filtered_cloud, .0, .03);
 
         // Convert filtered cloud back to ROS msg for transform
         sensor_msgs::msg::PointCloud2 n_tf_filtered_msg;
@@ -264,7 +279,7 @@ private:
         seg.setMethodType(pcl::SAC_RANSAC);
         seg.setMaxIterations(plane_max_tree_iterations);
         seg.setDistanceThreshold(plane_distance_treshold);
-        while (tf_filtered_pcl_ptr->size() > 0.1 * nr_points && !error)
+        while (tf_filtered_pcl_ptr->size() > 0.3 * nr_points && !error)
         {
             // Segment the largest planar component from the remaining cloud
             seg.setInputCloud(tf_filtered_pcl_ptr);
@@ -276,17 +291,18 @@ private:
             }
             // Extract the planar inliers from the input cloud
             pcl::ExtractIndices<pcl_t> extract;
-            try{
-            extract.setInputCloud(tf_filtered_pcl_ptr);
-            extract.setIndices(inliers);
-            extract.setNegative(false);
-            // Get the points associated with the planar surface
-            extract.filter(*cloud_plane);
-            //std::cout << "PointCloud representing the planar component: " << cloud_plane->size() << " data points." << std::endl;
-            // Remove the planar inliers, extract the rest
-            extract.setNegative(true);
-            extract.filter(*cloud_f);
-            *tf_filtered_pcl_ptr = *cloud_f;
+            try
+            {
+                extract.setInputCloud(tf_filtered_pcl_ptr);
+                extract.setIndices(inliers);
+                extract.setNegative(false);
+                // Get the points associated with the planar surface
+                extract.filter(*cloud_plane);
+                // std::cout << "PointCloud representing the planar component: " << cloud_plane->size() << " data points." << std::endl;
+                //  Remove the planar inliers, extract the rest
+                extract.setNegative(true);
+                extract.filter(*cloud_f);
+                *tf_filtered_pcl_ptr = *cloud_f;
             }
             catch (const pcl::PCLException &ex)
             {
@@ -320,7 +336,8 @@ private:
 
                 RCLCPP_ERROR(this->get_logger(), "At line %d %s", ex.getLineNumber(), ex.what());
             }
-            if(!error){
+            if (!error)
+            {
 
                 pcl::PointIndices merged_indices;
                 pcl::PointIndices cluster;
@@ -338,47 +355,49 @@ private:
                 }
 
                 pcl::PointCloud<pcl_t>::Ptr clustered_pcl(new pcl::PointCloud<pcl_t>);
-
-                for (const auto &idx : biggest_cluster_indices.indices)
+                if (biggest_cluster_indices.indices.size() > 0)
                 {
-                    clustered_pcl->push_back((*tf_filtered_pcl_ptr)[idx]);
-                }
-                clustered_pcl->width = clustered_pcl->size();
-                clustered_pcl->height = 1;
-                clustered_pcl->is_dense = true;
-                Eigen::Vector4f centroid;
-                pcl::compute3DCentroid(*clustered_pcl, centroid);
-                centroid_vect.push_back(centroid);
-                std_msgs::msg::ColorRGBA centroid_color;
-                centroid_color.a = 1.0f;
-                centroid_color.r = .5f;
-                centroid_color.g = .5f;
-                centroid_color.b = 0.0f;
+                    for (const auto &idx : biggest_cluster_indices.indices)
+                    {
+                        clustered_pcl->push_back((*tf_filtered_pcl_ptr)[idx]);
+                    }
+                    clustered_pcl->width = clustered_pcl->size();
+                    clustered_pcl->height = 1;
+                    clustered_pcl->is_dense = true;
+                    Eigen::Vector4f centroid;
+                    pcl::compute3DCentroid(*clustered_pcl, centroid);
+                    centroid_vect.push_back(centroid);
+                    std_msgs::msg::ColorRGBA centroid_color;
+                    centroid_color.a = 1.0f;
+                    centroid_color.r = .5f;
+                    centroid_color.g = .5f;
+                    centroid_color.b = 0.0f;
 
-                Eigen::Vector4f median_point = computeMedianPoint(clustered_pcl);
-                std::vector<Eigen::Vector4f> median_vect;
-                median_vect.push_back(median_point);
-                std_msgs::msg::ColorRGBA median_color;
-                median_color.a = 1.0f;
-                median_color.r = .5f;
-                median_color.g = .5f;
-                median_color.b = 0.5f;
+                    Eigen::Vector4f median_point = computeMedianPoint(clustered_pcl);
+                    std::vector<Eigen::Vector4f> median_vect;
+                    median_vect.push_back(median_point);
+                    std_msgs::msg::ColorRGBA median_color;
+                    median_color.a = 1.0f;
+                    median_color.r = .5f;
+                    median_color.g = .5f;
+                    median_color.b = 0.5f;
 
-                // /* ========================================
-                //  * CONVERT PointCloud2 PCL->ROS, PUBLISH CLOUD
-                //  * ========================================*/
-                
-                this->publishPointCloud(clustered_pub_, *clustered_pcl);
-                this->publishMarker(centroid_pub_, centroid_vect, centroid_color);
-                this->publishMarker(median_pub_, median_vect, median_color);
+                    // /* ========================================
+                    //  * CONVERT PointCloud2 PCL->ROS, PUBLISH CLOUD
+                    //  * ========================================*/
+
+                    this->publishPointCloud(clustered_pub_, *clustered_pcl);
+                    this->publishMarker(centroid_pub_, centroid_vect, centroid_color);
+                    this->publishMarker(median_pub_, median_vect, median_color);
                 }
             }
+        }
         this->publishPointCloud(pre_filter_pub_, tf_filtered_pcl);
 
         // Get duration and log to console
         auto stop = std::chrono::high_resolution_clock::now();
         auto t_ms = std::chrono::duration_cast<std::chrono::milliseconds>(stop - start);
-        //RCLCPP_INFO(get_logger(), "Time (msec): %ld", t_ms.count());
+        // RCLCPP_INFO(get_logger(), "Time (msec): %ld", t_ms.count());
     } // cloud_callback
 
     /**

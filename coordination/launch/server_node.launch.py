@@ -32,7 +32,7 @@ def generate_launch_description():
             executable='server_node',
             name='server_node',
             output='screen',
-            prefix=['gdb -ex run --args'], # debug arguments build with "--cmake-args -DCMAKE_BUILD_TYPE=Debug"
+            #prefix=['gdb -ex run --args'], # debug arguments build with "--cmake-args -DCMAKE_BUILD_TYPE=Debug"
             namespace = "mesh_server",
             parameters=[
                 {'use_sim_time': use_sim_time},  # or True, depending on your setup

@@ -34,7 +34,8 @@ def generate_launch_description():
                 executable='pcl_filter_node',
                 name='pcl_filter_node',
                 output='screen',
-                #prefix=['gdb -ex run --args'],
+                #prefix=['gdb -ex run --args'], # debug arguments build with "--cmake-args -DCMAKE_BUILD_TYPE=Debug"
+
                 namespace = shelfino_name,
                 parameters=[
                     {'use_sim_time': use_sim_time},  # or True, depending on your setup

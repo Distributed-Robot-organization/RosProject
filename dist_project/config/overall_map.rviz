@@ -9,6 +9,7 @@ Panels:
         - /Map1
         - /RobotModel1/Description Topic1
         - /PointCloud22
+        - /PointCloud23
         - /PointCloud26
         - /TF1
       Splitter Ratio: 0.5
@@ -30,7 +31,7 @@ Panels:
     Experimental: false
     Name: Time
     SyncMode: 0
-    SyncSource: ""
+    SyncSource: PointCloud2
 Visualization Manager:
   Class: ""
   Displays:
@@ -211,7 +212,7 @@ Visualization Manager:
       Color: 0; 255; 0
       Color Transformer: FlatColor
       Decay Time: 0
-      Enabled: false
+      Enabled: true
       Invert Rainbow: false
       Max Color: 255; 255; 255
       Max Intensity: 4096
@@ -232,7 +233,7 @@ Visualization Manager:
         Value: /pollo/cluster_pcl
       Use Fixed Frame: true
       Use rainbow: true
-      Value: false
+      Value: true
     - Alpha: 1
       Autocompute Intensity Bounds: true
       Autocompute Value Bounds:
@@ -382,7 +383,7 @@ Visualization Manager:
       Color: 255; 85; 255
       Color Transformer: FlatColor
       Decay Time: 0
-      Enabled: false
+      Enabled: true
       Invert Rainbow: false
       Max Color: 255; 255; 255
       Max Intensity: 4096
@@ -403,7 +404,7 @@ Visualization Manager:
         Value: /shelfino1/cluster_pcl
       Use Fixed Frame: true
       Use rainbow: true
-      Value: false
+      Value: true
     - Alpha: 1
       Autocompute Intensity Bounds: true
       Autocompute Value Bounds:
@@ -434,7 +435,7 @@ Visualization Manager:
         Filter size: 10
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /shelfino1/voxel_estimate
+        Value: /mesh_server/voxel_estimate_out
       Use Fixed Frame: true
       Use rainbow: true
       Value: true
@@ -442,7 +443,7 @@ Visualization Manager:
       Enabled: true
       Name: Marker
       Namespaces:
-        {}
+        "": true
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -455,7 +456,7 @@ Visualization Manager:
       Enabled: true
       Name: Marker
       Namespaces:
-        {}
+        "": true
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -525,25 +526,25 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 27.7724552154541
+      Distance: 6.296137809753418
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 4.164334774017334
-        Y: 4.995674133300781
-        Z: -0.4158610701560974
+        X: 11.13318157196045
+        Y: 5.076369762420654
+        Z: 0.6585769653320312
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.5004013776779175
+      Pitch: 0.7054012417793274
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 4.09024715423584
+      Yaw: 5.3134236335754395
     Saved: ~
 Window Geometry:
   Displays:
