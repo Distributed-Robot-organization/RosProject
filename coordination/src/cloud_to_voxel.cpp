@@ -1,11 +1,13 @@
 #include "coordination/cloud_to_voxel.hpp"
 
-CloudToVoxel::CloudToVoxel(float voxel_leaf_size)
+CloudToVoxel::CloudToVoxel(float voxel_leaf_size, int maximum_count_per_voxel, int minimum_count)
 {
     voxel_leaf_size_ = voxel_leaf_size;
+    threshold_count_per_voxel_ = maximum_count_per_voxel;
     raw_cloud_ = pcl::PointCloud<point_t>::Ptr(new pcl::PointCloud<point_t>());
     octree_ = pcl::octree::OctreePointCloudSearch<point_t>::Ptr(new pcl::octree::OctreePointCloudSearch<point_t>(voxel_leaf_size_));
     voxel_cloud_ = pcl::PointCloud<point_t>::Ptr(new pcl::PointCloud<point_t>());
+    minimum_count_ = minimum_count;
 }
 
 void CloudToVoxel::generateVoxels()
@@ -22,7 +24,7 @@ void CloudToVoxel::generateVoxels()
     float e_x = (p_max_.x + voxel_leaf_size_ / 2);
     float e_y = (p_max_.y + voxel_leaf_size_ / 2);
     float e_z = (p_max_.z + voxel_leaf_size_ / 2);
-    //Number of iterations needed
+    // Number of iterations needed
     int it_x = std::ceil<int>((e_x - s_x) / voxel_leaf_size_);
     int it_y = std::ceil<int>((e_y - s_y) / voxel_leaf_size_);
     int it_z = std::ceil<int>((e_z - s_z) / voxel_leaf_size_);
@@ -33,7 +35,7 @@ void CloudToVoxel::generateVoxels()
 
     std::cout << p_min_ << " " << p_max_ << std::endl;
     std::cout << it_x << " " << it_y << " " << it_z << std::endl;
-    //populating
+    // populating
     for (int i = 0; i < it_x; i++)
     {
         for (int j = 0; j < it_y; j++)
@@ -61,15 +63,16 @@ void CloudToVoxel::generateVoxels()
         {"x", static_cast<float>(it_x)},
         {"y", static_cast<float>(it_y)},
         {"z", static_cast<float>(it_z)}};
-
 }
 
 void CloudToVoxel::voxelDensityEstimate()
 {
     // search alghorithm that divides the space in cubes with eigth or no children
     // the resolution is the distance between the point and the furthest point it searches
+    // octree_ = pcl::octree::OctreePointCloudSearch<point_t>::Ptr(new pcl::octree::OctreePointCloudSearch<point_t>(voxel_leaf_size_));
     octree_->setInputCloud(raw_cloud_);
     octree_->addPointsFromInputCloud();
+    probability_pcl_ = pcl::PointCloud<PointXYZProb>::Ptr(new pcl::PointCloud<PointXYZProb>);
     // Using cannot use directly the point object as key for the map since it cannot
     // understand what is a bigger value (If i understood correctly the error)
     for (auto searchPoint : *voxel_cloud_)
@@ -80,9 +83,9 @@ void CloudToVoxel::voxelDensityEstimate()
         if (octree_->voxelSearch(searchPoint, pointIdxVec))
         {
             count_per_voxel_.emplace(std::tuple<float, float, float>(searchPoint.x, searchPoint.y, searchPoint.z), pointIdxVec.size());
-            if (maximum_count < pointIdxVec.size())
+            if (running_maximum_count < pointIdxVec.size())
             {
-                maximum_count = pointIdxVec.size();
+                running_maximum_count = pointIdxVec.size();
             }
         }
         else
@@ -92,7 +95,13 @@ void CloudToVoxel::voxelDensityEstimate()
     }
     for (auto keyval : count_per_voxel_)
     {
-        normalized_count_per_voxel_.emplace(keyval.first, float(keyval.second) / float(maximum_count));
+        // normalized_count_per_voxel_.emplace(keyval.first, float(keyval.second) / float(running_maximum_count));
+        PointXYZProb p;
+        p.x = std::get<0>(keyval.first);
+        p.y = std::get<1>(keyval.first);
+        p.z = std::get<2>(keyval.first);
+        p.probability = float(keyval.second) / float(running_maximum_count);
+        probability_pcl_->push_back(p);
     }
 }
 
@@ -139,39 +148,43 @@ point_2_norm_cloud_map_t CloudToVoxel::getNormalizedCountPerVoxel(point_2_norm_c
     return *copy;
 }
 
-void publishVoxelEstimate(const rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub,
-                          const pcl::PointCloud<point_t>::Ptr cloud_voxel,
-                          const point_2_norm_cloud_map_t normalized_count_per_voxel,
-                          builtin_interfaces::msg::Time stamp)
+std::vector<point_t> CloudToVoxel::getUnderExploredVoxels()
 {
 
-    // normalized vector between 0 and 1
-    pcl::PointCloud<pcl::PointXYZRGBA>::Ptr norm_vox_cloud(new pcl::PointCloud<pcl::PointXYZRGBA>((*cloud_voxel).width, (*cloud_voxel).height));
-    for (auto p : *cloud_voxel)
+    pcl::PointCloud<point_t>::Ptr filtered_voxel_pcl = pcl::PointCloud<point_t>::Ptr(new pcl::PointCloud<point_t>());
+    for (auto p : *probability_pcl_)
     {
-        try
+        if (p.probability >= minimum_count_)
         {
-            pcl::PointXYZRGBA p_out;
+            point_t p_out;
             p_out.x = p.x;
             p_out.y = p.y;
             p_out.z = p.z;
-            p_out.g = uint8_t(255);
-            p_out.b = uint8_t(255);
-            p_out.r = uint8_t(255);
-            p_out.a = static_cast<uint8_t>(std::floor((normalized_count_per_voxel.at(std::tuple<float, float, float>(p.x, p.y, p.z))) * 255));
-            norm_vox_cloud->push_back(p_out);
-        }
-        catch (std::out_of_range &ex)
-        {
-            std::ostringstream oss;
-            oss << "std::out_of_range for reading point " << p.x << " " << p.y << " " << p.z << "Description: " << ex.what();
-            throw std::runtime_error(oss.str());
+            filtered_voxel_pcl->push_back(p_out);
         }
     }
+    // Creating the KdTree object for the search method of the extraction
+    pcl::search::KdTree<point_t>::Ptr tree(new pcl::search::KdTree<point_t>);
+    pcl::EuclideanClusterExtraction<point_t> ec;
+    std::vector<pcl::PointIndices> clusters_indices;
+    // There are no point remaining in the point cloud to clusterize
 
-    sensor_msgs::msg::PointCloud2::SharedPtr ros_msg(new sensor_msgs::msg::PointCloud2);
-    pcl::toROSMsg(*norm_vox_cloud, *ros_msg);
-    ros_msg->header.frame_id = "map";
-    ros_msg->header.stamp = stamp;
-    pub->publish(*ros_msg);
+    tree->setInputCloud(filtered_voxel_pcl);
+
+    ec.setClusterTolerance(voxel_leaf_size_ * 2); // maximum search distance
+    // ec.setMinClusterSize(min_cluster_size);
+    // ec.setMaxClusterSize(max_cluster_size);
+    ec.setSearchMethod(tree);
+    ec.setInputCloud(filtered_voxel_pcl);
+    ec.extract(clusters_indices);
+    std::vector<point_t> out_vector;
+    for (auto cluster_idxs : clusters_indices)
+    {
+        Eigen::Vector4f centroid;
+        pcl::compute3DCentroid(*filtered_voxel_pcl, cluster_idxs, centroid);
+        point_t p(centroid[0], centroid[1], centroid[2]);
+
+        out_vector.push_back(p);
+    }
+    return out_vector;
 }

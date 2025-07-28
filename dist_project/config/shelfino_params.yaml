@@ -59,11 +59,18 @@ topics:
   filtered_pcl: "filtered_pcl"
   cluster_pose: "c_position"
   cluster_pcl: "cluster_pcl"
-  cluster_centroid: "median"
+  cluster_centroid: "median" # "median" and "centroid"  are usable values
   voxel_estimate: "voxel_estimate"
 
-filter_params:
-  voxel_leaf_size: 0.05
+pcl_filter_params:
+  cluster_tolerance: .05
+  plane_distance_treshold : 0.05
+
+server_params:
+  voxel_size: 0.05 #meters
+  hz: 3 #update rate of the cluster
+  maximum_count_per_voxel: 250 #number of point per voxel
+  minumum_count: 0 # to be considered when we are finding the voxels to analyze again
       
 shelfino_additions:
   max_camera_depth: 8.0

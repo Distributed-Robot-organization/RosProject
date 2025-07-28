@@ -65,6 +65,7 @@ bool enforceNormalOrIntensitySimilarity(const pcl::PointXYZRGBNormal &point_a, c
         return (true);
     return (false);
 }
+
 class MinimalPointCloudProcessor : public rclcpp::Node
 {
 public:
@@ -91,7 +92,7 @@ public:
 
         this->get_parameter_or("max_camera_depth", max_camera_depth_param, rclcpp::Parameter("", 8.0));
 
-        this->get_parameter_or("cluster_tolerance", cluster_tolerance_param, rclcpp::Parameter("", 0.02));
+        this->get_parameter_or("cluster_tolerance", cluster_tolerance_param, rclcpp::Parameter("", 0.05));
         this->get_parameter_or("min_cluster_size", min_cluster_size_param, rclcpp::Parameter("", 100));
         this->get_parameter_or("max_cluster_size", max_cluster_size_param, rclcpp::Parameter("", 99000));
         this->get_parameter_or("plane_max_tree_iterations_max", plane_max_tree_iterations_param, rclcpp::Parameter("", 100));
@@ -323,7 +324,7 @@ private:
             {
                 tree->setInputCloud(tf_filtered_pcl_ptr);
 
-                ec.setClusterTolerance(cluster_tolerance); // 2cm
+                ec.setClusterTolerance(cluster_tolerance); // maximum search distance
                 ec.setMinClusterSize(min_cluster_size);
                 ec.setMaxClusterSize(max_cluster_size);
                 ec.setSearchMethod(tree);

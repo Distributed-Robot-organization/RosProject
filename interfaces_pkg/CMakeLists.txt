@@ -9,6 +9,10 @@ endif()
 find_package(ament_cmake REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(pcl_ros REQUIRED)
+find_package(sensor_msgs REQUIRED)
+find_package(visualization_msgs REQUIRED)
+find_package(PCL REQUIRED COMPONENTS common io filters)
 
 
 find_package(rosidl_default_generators REQUIRED)
@@ -22,6 +26,7 @@ set(interface_files
 )
 
 
+
 rosidl_generate_interfaces(${PROJECT_NAME}
   ${interface_files}
   DEPENDENCIES
@@ -33,7 +38,37 @@ rosidl_generate_interfaces(${PROJECT_NAME}
 ament_export_dependencies(
   rosidl_default_runtime
 )
+
 #### ROS2 Interface Directives [END] ####
+
+# include_directories(${PCL_INCLUDE_DIRS})
+# link_directories(${PCL_LIBRARY_DIRS})
+# add_definitions(${PCL_DEFINITIONS})
+
+# # Include directories
+# include_directories(include)
+
+# # Create the library
+# add_library(interfaces_lib STATIC
+#   src/publishers.cpp
+#   # Other C++ source files
+# )
+# target_include_directories(interfaces_lib PUBLIC
+#   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+#   $<INSTALL_INTERFACE:include>
+# )
+# # Link dependencies to your library (if any)
+# ament_target_dependencies(interfaces_lib
+#   rclcpp sensor_msgs visualization_msgs pcl_conversions pcl_ros 
+#   # Add any other dependencies for the library, if required
+# )
+# install(TARGETS interfaces_lib
+#   EXPORT export_${PROJECT_NAME}
+#   ARCHIVE DESTINATION lib
+#   LIBRARY DESTINATION lib
+# )
+
+#ament_export_libraries(interfaces_lib)
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)

@@ -31,6 +31,7 @@ find_package(PCL REQUIRED COMPONENTS common io filters)
 
 
 include_directories(${catkin_INCLUDE_DIRS})
+include_directories(${interfaces_pkg_INCLUDE_DIRS})
 include_directories(${PCL_INCLUDE_DIRS})
 link_directories(${PCL_LIBRARY_DIRS})
 add_definitions(${PCL_DEFINITIONS})
@@ -38,10 +39,23 @@ add_definitions(${PCL_DEFINITIONS})
 add_executable(server_node 
   src/server_node.cpp
   src/cloud_to_voxel.cpp)
+# target_link_libraries(server_node
+#   interfaces_lib
+# )
 
 
 
-ament_target_dependencies(server_node interfaces_pkg pcl_conversions rclcpp tf2_ros tf2 tf2_eigen sensor_msgs visualization_msgs geometry_msgs pcl_ros)
+ament_target_dependencies(server_node
+ interfaces_pkg
+  pcl_conversions
+   rclcpp
+    tf2_ros
+    tf2 
+    tf2_eigen
+     sensor_msgs
+      visualization_msgs
+       geometry_msgs
+        pcl_ros)
 
 target_include_directories(server_node PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>

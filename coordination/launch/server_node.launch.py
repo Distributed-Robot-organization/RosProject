@@ -37,7 +37,10 @@ def generate_launch_description():
             parameters=[
                 {'use_sim_time': use_sim_time},  # or True, depending on your setup
                 {"pcl_topic_in": shelfino_config_yaml["topics"]["cluster_pcl"]},
+                {"voxel_size": shelfino_config_yaml["server_params"]["voxel_size"]},
+                {"hz": shelfino_config_yaml["server_params"]["hz"]},
                 {"robot_ids":shelfino_ros_config['init_names']},
+                {"minumum_count":shelfino_config_yaml["server_params"]["minumum_count"]},
                 {"voxel_topic_out", "voxel_estimate"}
             ]
         ))
