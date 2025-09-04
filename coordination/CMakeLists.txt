@@ -27,6 +27,9 @@ find_package(dist_project REQUIRED)
 # further dependencies manually.
 # find_package(<dependency> REQUIRED)
 
+find_package(Boost 1.74)
+
+
 find_package(PCL REQUIRED COMPONENTS common io filters)
 
 
@@ -35,10 +38,14 @@ include_directories(${interfaces_pkg_INCLUDE_DIRS})
 include_directories(${PCL_INCLUDE_DIRS})
 link_directories(${PCL_LIBRARY_DIRS})
 add_definitions(${PCL_DEFINITIONS})
-#<<<< Cluster Filter Node ---
+
+
+#<<<< Server Node ---
 add_executable(server_node 
   src/server_node.cpp
-  src/cloud_to_voxel.cpp)
+  src/cloud_to_voxel.cpp
+  src/publishers.cpp
+  src/robot_manager.cpp)
 # target_link_libraries(server_node
 #   interfaces_lib
 # )
@@ -62,9 +69,11 @@ target_include_directories(server_node PUBLIC
   $<INSTALL_INTERFACE:include>)
 target_compile_features(server_node PUBLIC c_std_99 cxx_std_17)  # Require C99 and C++17
 
+target_link_libraries(server_node Boost::headers)
+
 install(TARGETS server_node
   DESTINATION lib/${PROJECT_NAME})
-  #--- Cluster Filter Node [END] >>>#
+  #--- Server Node [END] >>>#
 
 
 if(BUILD_TESTING)

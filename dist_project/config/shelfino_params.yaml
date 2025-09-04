@@ -64,13 +64,13 @@ topics:
 
 pcl_filter_params:
   cluster_tolerance: .05
-  plane_distance_treshold : 0.05
+  plane_distance_treshold: 0.05
 
 server_params:
   voxel_size: 0.05 #meters
-  hz: 3 #update rate of the cluster
+  hz: 1 #update rate of the cluster
   maximum_count_per_voxel: 250 #number of point per voxel
-  minumum_count: 0 # to be considered when we are finding the voxels to analyze again
-      
+  minimum_percentage: 0.1 # ... of the maximum detected to be considered when we are finding the voxels to analyze again
+
 shelfino_additions:
   max_camera_depth: 8.0

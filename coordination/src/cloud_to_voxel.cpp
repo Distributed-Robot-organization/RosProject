@@ -1,18 +1,22 @@
 #include "coordination/cloud_to_voxel.hpp"
-
-CloudToVoxel::CloudToVoxel(float voxel_leaf_size, int maximum_count_per_voxel, int minimum_count)
+#include <limits>
+CloudToVoxel::CloudToVoxel(float voxel_leaf_size, int maximum_count_per_voxel, float minimum_percentage)
 {
     voxel_leaf_size_ = voxel_leaf_size;
     threshold_count_per_voxel_ = maximum_count_per_voxel;
     raw_cloud_ = pcl::PointCloud<point_t>::Ptr(new pcl::PointCloud<point_t>());
     octree_ = pcl::octree::OctreePointCloudSearch<point_t>::Ptr(new pcl::octree::OctreePointCloudSearch<point_t>(voxel_leaf_size_));
     voxel_cloud_ = pcl::PointCloud<point_t>::Ptr(new pcl::PointCloud<point_t>());
-    minimum_count_ = minimum_count;
+    minimum_percentage_ = minimum_percentage;
 }
 
 void CloudToVoxel::generateVoxels()
 {
     pcl::getMinMax3D(*this->raw_cloud_, p_min_, p_max_);
+    centroid_.x =(p_max_.x + p_min_.x)/2;
+    centroid_.y =(p_max_.y + p_min_.y)/2;
+    centroid_.z =(p_max_.z + p_min_.z)/2;
+
     // generating centroid of the voxels a bit outside of the cluster to have a bit of margin
     // starting point of the voxels
     float s_x = p_min_.x - voxel_leaf_size_ / 2;
@@ -47,7 +51,7 @@ void CloudToVoxel::generateVoxels()
             }
         }
     }
-    // Build the return map
+    // Debug info of the voxel set
 
     voxel_parameters_["start"] = {
         {"x", s_x},
@@ -65,6 +69,7 @@ void CloudToVoxel::generateVoxels()
         {"z", static_cast<float>(it_z)}};
 }
 
+// Is computed the density estimate of voxels that contain a minimum percentage of the maximum
 void CloudToVoxel::voxelDensityEstimate()
 {
     // search alghorithm that divides the space in cubes with eigth or no children
@@ -73,8 +78,10 @@ void CloudToVoxel::voxelDensityEstimate()
     octree_->setInputCloud(raw_cloud_);
     octree_->addPointsFromInputCloud();
     probability_pcl_ = pcl::PointCloud<PointXYZProb>::Ptr(new pcl::PointCloud<PointXYZProb>);
-    // Using cannot use directly the point object as key for the map since it cannot
+    // Cannot use directly the point object as key for the map since it cannot
     // understand what is a bigger value (If i understood correctly the error)
+    long unsigned int running_maximum_count = 0;
+
     for (auto searchPoint : *voxel_cloud_)
     {
         // Neighbors within voxel search
@@ -93,6 +100,9 @@ void CloudToVoxel::voxelDensityEstimate()
             count_per_voxel_.emplace(std::tuple<float, float, float>(searchPoint.x, searchPoint.y, searchPoint.z), 0);
         }
     }
+    // Get lower limit of the voxels to consider
+    long unsigned int minimum_count =0;
+    minimum_count = floor(minimum_percentage_*running_maximum_count);
     for (auto keyval : count_per_voxel_)
     {
         // normalized_count_per_voxel_.emplace(keyval.first, float(keyval.second) / float(running_maximum_count));
@@ -100,16 +110,23 @@ void CloudToVoxel::voxelDensityEstimate()
         p.x = std::get<0>(keyval.first);
         p.y = std::get<1>(keyval.first);
         p.z = std::get<2>(keyval.first);
-        p.probability = float(keyval.second) / float(running_maximum_count);
+        if (keyval.second>=minimum_count)
+        {
+            p.probability = ((float(keyval.second-minimum_count))/ (float(running_maximum_count-minimum_count)))+minimum_percentage_;
+        }
+        else {
+            p.probability =0.0;
+        }
+        std::cout <<"["<< p.probability<<"f "<<keyval.second<< "]";
         probability_pcl_->push_back(p);
     }
+
+    std::cout << "Minimum # of points considered  " <<minimum_count << " Maximum # of points counted" << running_maximum_count<< std::endl;
 }
 
 void CloudToVoxel::expandPCL(pcl::PointCloud<point_t> new_cloud)
 {
     *raw_cloud_ += new_cloud;
-    if (do_estimate_)
-        this->voxelDensityEstimate();
 }
 void CloudToVoxel::startEstimating()
 {
@@ -121,16 +138,6 @@ void CloudToVoxel::startEstimating()
     do_estimate_ = true;
 }
 
-point_2_count_map_t CloudToVoxel::getCountPerVoxel()
-{
-    point_2_count_map_t *copy(new point_2_count_map_t());
-    for (auto keyval : normalized_count_per_voxel_)
-    {
-        copy->emplace(keyval.first, keyval.second);
-    }
-    return *copy;
-}
-
 pcl::PointCloud<point_t>::Ptr CloudToVoxel::getVoxelCloud()
 {
 
@@ -139,14 +146,6 @@ pcl::PointCloud<point_t>::Ptr CloudToVoxel::getVoxelCloud()
     return copy;
 }
 
-point_2_norm_cloud_map_t CloudToVoxel::getNormalizedCountPerVoxel(point_2_norm_cloud_map_t *copy)
-{
-    for (auto keyval : normalized_count_per_voxel_)
-    {
-        copy->emplace(keyval.first, keyval.second);
-    }
-    return *copy;
-}
 
 std::vector<point_t> CloudToVoxel::getUnderExploredVoxels()
 {

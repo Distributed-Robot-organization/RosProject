@@ -26,7 +26,7 @@ def generate_launch_description():
         shelfino_config_yaml = yaml.load(f, Loader=yaml.FullLoader)
         shelfino_ros_config = shelfino_config_yaml["/**"]["ros__parameters"]
         print(shelfino_ros_config)
-    
+
         nodes_to_launch.append(Node(
             package='coordination',
             executable='server_node',
@@ -40,11 +40,11 @@ def generate_launch_description():
                 {"voxel_size": shelfino_config_yaml["server_params"]["voxel_size"]},
                 {"hz": shelfino_config_yaml["server_params"]["hz"]},
                 {"robot_ids":shelfino_ros_config['init_names']},
-                {"minumum_count":shelfino_config_yaml["server_params"]["minumum_count"]},
+                {"minimum_percentage":shelfino_config_yaml["server_params"]["minimum_percentage"]},
                 {"voxel_topic_out", "voxel_estimate"}
             ]
         ))
-        
+
 
     return LaunchDescription(
         nodes_to_launch

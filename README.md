@@ -6,7 +6,7 @@ This is designed to be run as part of the Ros Shelfino project
 
  ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args --remap cmd_vel:=shelfino1/cmd_vel
 
- 
+
 ros2 launch dist_project start_slam.launch.py use_sim_time:=true
 
 ros2 run nav2_map_server map_saver_cli -f my_map
@@ -31,7 +31,7 @@ aliases and bash functions to make the container run as intended
 
 ## docker command build
 ``` bash
-docker build dist_docker .
+docker build . -t dist_docker
 ```
 ## Commands to run Docker
 

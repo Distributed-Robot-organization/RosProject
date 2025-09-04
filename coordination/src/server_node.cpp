@@ -1,5 +1,7 @@
 #include "coordination/cloud_to_voxel.hpp"
-//#include "interfaces_pkg/publishers.hpp"
+#include "coordination/publishers.hpp"
+#include "coordination/robot_manager.hpp"
+
 #include <memory>
 #include <string>
 #include <thread>
@@ -8,124 +10,19 @@
 using std::placeholders::_1;
 
 //     Timer
-//      ╎
-//      ╎
-//      ∨ 
-//Consume buffer of point_clouds to update the master pointcloud
-//     ╎
-//     ╎
-//     ∨
+//       ╎
+//       ╎
+//       ∨
+// Consume buffer of point_clouds to update the master point_cloud
+//       ╎
+//       ╎
+//       ∨
 // All robot have published at least once ? ╶╶╶NO-╶> Don't do anything yet
 //       ╎
 //      Yes
 //       ╎
-//       ∨ 
-//Start voxel estimation
-
-void publishMarkers(const rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr pub,
-                    const std::vector<point_t> points,
-                    builtin_interfaces::msg::Time stamp,
-                    std_msgs::msg::ColorRGBA color)
-{
-  visualization_msgs::msg::Marker marker_msg;
-  marker_msg.header.frame_id = "map"; // your fixed frame
-  marker_msg.header.stamp = stamp;
-  marker_msg.id = 0;
-  marker_msg.type = visualization_msgs::msg::Marker::SPHERE_LIST;
-  marker_msg.action = visualization_msgs::msg::Marker::ADD;
-
-  // Define the scale of the points (size)
-  marker_msg.scale.x = 0.1; // width of points
-  marker_msg.scale.y = 0.1; // height of points
-
-  // Color RGBA (red here)
-  marker_msg.color = color; // alpha (opacity)
-  geometry_msgs::msg::Point p_msg;
-  for (const auto &p : points)
-  {
-    p_msg.x = p.x;
-    p_msg.y = p.y;
-    p_msg.z = p.z;
-    marker_msg.points.push_back(p_msg);
-  }
-  pub->publish(marker_msg);
-}
-
-void publishVoxelEstimate(const rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub,
-                          const pcl::PointCloud<PointXYZProb>::Ptr normalized_pcl,
-                          builtin_interfaces::msg::Time stamp)
-{
-
-  // normalized vector between 0 and 1
-  pcl::PointCloud<pcl::PointXYZRGBA>::Ptr norm_vox_cloud(new pcl::PointCloud<pcl::PointXYZRGBA>((*normalized_pcl).width, (*normalized_pcl).height));
-  for (auto p : *normalized_pcl)
-  {
-    try
-    {
-      pcl::PointXYZRGBA p_out;
-      p_out.x = p.x;
-      p_out.y = p.y;
-      p_out.z = p.z;
-      p_out.g = uint8_t(255);
-      p_out.b = uint8_t(255);
-      p_out.r = uint8_t(255);
-      p_out.a = static_cast<uint8_t>(std::floor(p.probability * 254));
-      norm_vox_cloud->push_back(p_out);
-      std::cout << "punto " << std::floor(p.probability * 254) << " prob" << p.probability << std::endl;
-    }
-    catch (std::out_of_range &ex)
-    {
-      std::ostringstream oss;
-      oss << "std::out_of_range for reading point " << p.x << " " << p.y << " " << p.z << "Description: " << ex.what();
-      throw std::runtime_error(oss.str());
-    }
-  }
-
-  sensor_msgs::msg::PointCloud2::SharedPtr ros_msg(new sensor_msgs::msg::PointCloud2);
-  pcl::toROSMsg(*norm_vox_cloud, *ros_msg);
-  ros_msg->header.frame_id = "map";
-  ros_msg->header.stamp = stamp;
-  pub->publish(*ros_msg);
-}
-
-void publishVoxelEstimate(const rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub,
-                          const pcl::PointCloud<point_t>::Ptr cloud_voxel,
-                          const point_2_norm_cloud_map_t normalized_count_per_voxel,
-                          builtin_interfaces::msg::Time stamp)
-{
-
-  // normalized vector between 0 and 1
-  pcl::PointCloud<pcl::PointXYZRGBA>::Ptr norm_vox_cloud(new pcl::PointCloud<pcl::PointXYZRGBA>((*cloud_voxel).width, (*cloud_voxel).height));
-  for (auto p : *cloud_voxel)
-  {
-    try
-    {
-      pcl::PointXYZRGBA p_out;
-      p_out.x = p.x;
-      p_out.y = p.y;
-      p_out.z = p.z;
-      p_out.g = uint8_t(255);
-      p_out.b = uint8_t(255);
-      p_out.r = uint8_t(255);
-      p_out.a = static_cast<uint8_t>(std::floor((normalized_count_per_voxel.at(std::tuple<float, float, float>(p.x, p.y, p.z))) * 255));
-      norm_vox_cloud->push_back(p_out);
-    }
-    catch (std::out_of_range &ex)
-    {
-      std::ostringstream oss;
-      oss << "std::out_of_range for reading point " << p.x << " " << p.y << " " << p.z << "Description: " << ex.what();
-      throw std::runtime_error(oss.str());
-    }
-  }
-
-  sensor_msgs::msg::PointCloud2::SharedPtr ros_msg(new sensor_msgs::msg::PointCloud2);
-  pcl::toROSMsg(*norm_vox_cloud, *ros_msg);
-  ros_msg->header.frame_id = "map";
-  ros_msg->header.stamp = stamp;
-  pub->publish(*ros_msg);
-}
-
-
+//       ∨
+// Start voxel estimation
 
 // -------------------- thread-safe queue --------------------
 template <typename T>
@@ -164,11 +61,10 @@ public:
     std::string robot_pcl_topic_ = this->declare_parameter<std::string>("pcl_topic_in", "cluster_pcl");
     robot_ids_ = this->declare_parameter<std::vector<std::string>>("robot_ids", std::vector<std::string>{"shelfino1", "pollo"});
     voxel_leaf_size_ = this->declare_parameter<float>("voxel_size", 0.05);
-    threshold_count_per_voxel_ = this->declare_parameter<int>("threshold_count_per_voxel_", 30);
-    minimum_count_per_voxel_ = this->declare_parameter<int>("minumum_count", 30);
-    
+    threshold_count_per_voxel_ = this->declare_parameter<int>("threshold_count_per_voxel", 30);
+    minimum_percentage_ = this->declare_parameter<float>("minimum_percentage", 0.1);
 
-        hz_ = this->declare_parameter<int>("hz", 3);
+    hz_ = this->declare_parameter<int>("hz", 3);
     if (robot_ids_.empty())
     {
       RCLCPP_FATAL(get_logger(), "No robot_ids given!");
@@ -176,7 +72,7 @@ public:
       return;
     }
 
-    pcl_manager_ = new CloudToVoxel(voxel_leaf_size_, threshold_count_per_voxel_, minimum_count_per_voxel_);
+    pcl_manager_ = new CloudToVoxel(voxel_leaf_size_, threshold_count_per_voxel_, minimum_percentage_);
 
     for (auto robot : robot_ids_)
     {
@@ -194,7 +90,10 @@ public:
 
     // Optional: publish the voxelised cloud
     voxel_publisher_ = create_publisher<sensor_msgs::msg::PointCloud2>(voxel_topic_out, 200);
-    under_explored_publisher_ = create_publisher<visualization_msgs::msg::Marker>(positions_to_explore_vis,200);
+    under_explored_publisher_ = create_publisher<visualization_msgs::msg::Marker>(positions_to_explore_vis, 200);
+    points_generic_ = create_publisher<visualization_msgs::msg::Marker>("Generic", 200);
+
+    circle_pub_ = create_publisher<visualization_msgs::msg::Marker>("circle_pub", 200);
 
     // --- main-loop timer (e.g. 20 Hz) ---
     timer_ = create_wall_timer(
@@ -210,25 +109,31 @@ private:
     std::string robot_id;
   };
   std::vector<rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr> pcl_sub_vect_;
-  
+  float minimum_percentage_;
+
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr voxel_publisher_;
   rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr under_explored_publisher_;
+  rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr points_generic_;
+
+  rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr circle_pub_;
 
   std::vector<std::string> robot_ids_;
   std::map<std::string, int> robots_pcl_it_;
   bool estimating_;
   float voxel_leaf_size_, hz_;
-  int threshold_count_per_voxel_, minimum_count_per_voxel_;
+  int threshold_count_per_voxel_;
   CloudToVoxel *pcl_manager_;
   ConcurrentQueue<ItemMsg> buffer_;
   rclcpp::TimerBase::SharedPtr timer_;
 
   // #############
   // # MAIN LOOP #
-  // #############  
+  // #############
   void server_executor()
   {
     ItemMsg item;
+    // Check if there is the possibility of starting estimation
+    // based on if all the robot sent at least one pointcloud
     bool perhaps_start_estimation = true;
     std_msgs::msg::Header header;
 
@@ -237,7 +142,7 @@ private:
       std::string robot_sender = item.robot_id;
 
       pcl::PointCloud<point_t> received_cloud;
-      // 1. Convert ROS → PCL
+      // 1. Convert ROS ->PCL
       pcl::fromROSMsg(*item.msg, received_cloud);
 
       robots_pcl_it_[robot_sender] = robots_pcl_it_[robot_sender] + 1;
@@ -272,24 +177,46 @@ private:
       }
       RCLCPP_INFO(this->get_logger(), "voxel parameters \n%s", oss.str().c_str());
       RCLCPP_INFO(this->get_logger(), "voxel Count %lu", pcl_manager_->voxel_cloud_->size());
+      // Compute search radius where the robots should position themselves
+      point_t centroid = pcl_manager_->centroid_;
+      point_t p_max = pcl_manager_->p_max_;
+      point_t p_min = pcl_manager_->p_min_;
+
+      double radius = sqrt(pow(p_max.x - centroid.x, 2) + pow(p_max.y - centroid.y, 2));
+
+      Polygon circle = make_circle(centroid.x, centroid.y, radius, 64);
+      std_msgs::msg::ColorRGBA circle_color;
+      circle_color.a = 1.0f;
+      circle_color.r = .5f;
+      circle_color.g = .0f;
+      circle_color.b = 0.5f;
+      std::vector<point_t> points_to_check;
+      points_to_check.push_back(p_max);
+            points_to_check.push_back(p_min);
+      points_to_check.push_back(centroid);
+
+      publishPoligon(circle_pub_, circle, this->get_clock()->now(), circle_color);
+      publishMarkers(points_generic_, points_to_check, this->get_clock()->now(), circle_color);
+
     }
 
     if (estimating_)
     {
-      //point_2_norm_cloud_map_t *norm = new point_2_norm_cloud_map_t();
-      //pcl_manager_->getNormalizedCountPerVoxel(norm);
+      // point_2_norm_cloud_map_t *norm = new point_2_norm_cloud_map_t();
+      // pcl_manager_->getNormalizedCountPerVoxel(norm);
+      pcl_manager_->voxelDensityEstimate();
       pcl::PointCloud<PointXYZProb>::Ptr probability_pcl = pcl_manager_->probability_pcl_;
       pcl::PointCloud<point_t>::Ptr raw_cloud = pcl_manager_->raw_cloud_;
       RCLCPP_INFO(this->get_logger(), "raw Count %lu", raw_cloud->size());
       publishVoxelEstimate(voxel_publisher_, probability_pcl, this->get_clock()->now());
       std::vector<point_t> points_to_check = pcl_manager_->getUnderExploredVoxels();
       std_msgs::msg::ColorRGBA centroid_color;
-                    centroid_color.a = 1.0f;
-                    centroid_color.r = .5f;
-                    centroid_color.g = .5f;
-                    centroid_color.b = 0.5f;
+      centroid_color.a = 1.0f;
+      centroid_color.r = .5f;
+      centroid_color.g = .5f;
+      centroid_color.b = 0.5f;
 
-      publishMarkers(under_explored_publisher_, points_to_check,this->get_clock()->now(),centroid_color);
+      publishMarkers(under_explored_publisher_, points_to_check, this->get_clock()->now(), centroid_color);
     }
   }
 };
