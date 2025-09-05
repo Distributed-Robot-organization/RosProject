@@ -10,7 +10,9 @@
 #include <boost/geometry/geometries/polygon.hpp>
 #include <cmath>
 
-
+#include "geometry_msgs/msg/pose.hpp"
+#include "geometry_msgs/msg/point.hpp"
+#include "tf2/LinearMath/Quaternion.h"
 
 #ifndef SERVER_TYPES_H
 #define SERVER_TYPES_H

@@ -1,9 +1,11 @@
 #include "coordination/publishers.hpp"
 
-void publishMarkers(const rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr pub,
-                    const std::vector<point_t> points,
-                    builtin_interfaces::msg::Time stamp,
-                    std_msgs::msg::ColorRGBA color)
+
+
+void publishPointMarkers(const rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr pub,
+                         const std::vector<point_t> points,
+                         builtin_interfaces::msg::Time stamp,
+                         std_msgs::msg::ColorRGBA color)
 {
   visualization_msgs::msg::Marker marker_msg;
   marker_msg.header.frame_id = "map"; // your fixed frame
@@ -49,7 +51,7 @@ void publishVoxelEstimate(const rclcpp::Publisher<sensor_msgs::msg::PointCloud2>
       p_out.r = uint8_t(255);
       p_out.a = static_cast<uint8_t>(std::floor(p.probability * 254));
       norm_vox_cloud->push_back(p_out);
-      //std::cout << "punto " << std::floor(p.probability * 254) << " prob" << p.probability << std::endl;
+      // std::cout << "punto " << std::floor(p.probability * 254) << " prob" << p.probability << std::endl;
     }
     catch (std::out_of_range &ex)
     {
@@ -104,27 +106,64 @@ void publishVoxelEstimate(const rclcpp::Publisher<sensor_msgs::msg::PointCloud2>
 }
 
 void publishPoligon(const rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr pub,
-    Polygon poly,
-    builtin_interfaces::msg::Time stamp,
-    std_msgs::msg::ColorRGBA color){
-        visualization_msgs::msg::Marker marker;
-        marker.header.frame_id = "map";  // or "world", adjust as needed
-        marker.header.stamp =stamp;
-        marker.ns = "circle";
-        marker.id = 0;
-        marker.type = visualization_msgs::msg::Marker::LINE_STRIP;
-        marker.action = visualization_msgs::msg::Marker::ADD;
+                    Polygon poly,
+                    builtin_interfaces::msg::Time stamp,
+                    std_msgs::msg::ColorRGBA color)
+{
+  visualization_msgs::msg::Marker marker;
+  marker.header.frame_id = "map"; // or "world", adjust as needed
+  marker.header.stamp = stamp;
+  marker.ns = "circle";
+  marker.id = 0;
+  marker.type = visualization_msgs::msg::Marker::LINE_STRIP;
+  marker.action = visualization_msgs::msg::Marker::ADD;
 
-        marker.scale.x = 0.05;  // line width
-        marker.color= color;
-        for (auto const& p : poly.outer()) {
-            geometry_msgs::msg::Point pt;
-            pt.x = p.x();
-            pt.y = p.y();
-            pt.z = 0.0;
-            marker.points.push_back(pt);
-        }
+  marker.scale.x = 0.05; // line width
+  marker.color = color;
+  for (auto const &p : poly.outer())
+  {
+    geometry_msgs::msg::Point pt;
+    pt.x = p.x();
+    pt.y = p.y();
+    pt.z = 0.0;
+    marker.points.push_back(pt);
+  }
 
-        pub->publish(marker);
-    }
+  pub->publish(marker);
+}
 
+void publishPoseMarkers(const rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pub,
+                        const std::vector<geometry_msgs::msg::Pose> robot_poses,
+                        builtin_interfaces::msg::Time stamp,
+                        std_msgs::msg::ColorRGBA color,
+                        std::string ns){
+  visualization_msgs::msg::MarkerArray marker_array;
+  int id = 0;
+
+  for (const auto &pose : robot_poses)
+  {
+
+    visualization_msgs::msg::Marker marker;
+    marker.header.frame_id = "map"; // adjust for your TF tree
+    marker.header.stamp = stamp;
+    marker.ns = ns;
+    marker.id = id++; // unique ID per marker
+    marker.type = visualization_msgs::msg::Marker::ARROW;
+    marker.action = visualization_msgs::msg::Marker::ADD;
+
+    marker.pose = pose;
+
+    // Arrow dimensions
+    marker.scale.x = .3; // shaft length
+    marker.scale.y = 0.1; // shaft diameter
+    marker.scale.z = 0.1; // head diameter
+
+    // Color: make them different shades
+    marker.color = color;
+    marker.lifetime = rclcpp::Duration(0, 0); // forever
+
+    marker_array.markers.push_back(marker);
+  }
+
+  pub->publish(marker_array);
+}
