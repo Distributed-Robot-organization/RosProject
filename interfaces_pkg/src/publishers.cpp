@@ -1,6 +1,6 @@
 #include<interfaces_pkg/publishers.hpp>
 
-void publishMarkers(const rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr pub,
+void publishPointMarkers(const rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr pub,
                     const std::vector<point_t> points,
                     builtin_interfaces::msg::Time stamp,
                     std_msgs::msg::ColorRGBA color)

@@ -1,18 +1,20 @@
-#include"coordination/robot_manager.hpp"
+#include "coordination/robot_manager.hpp"
 
-Polygon circle_polygon(double cx, double cy, double radius, int num_segments) {
-    Polygon poly;
-    auto &outer = poly.outer();
-    outer.reserve(num_segments + 1);
+Polygon circle_polygon(double cx, double cy, double radius, int num_segments)
+{
+  Polygon poly;
+  auto &outer = poly.outer();
+  outer.reserve(num_segments + 1);
 
-    for (int i = 0; i <= num_segments; i++) {
-        double theta = 2.0 * M_PI * double(i) / double(num_segments);
-        double x = cx + radius * cos(theta);
-        double y = cy + radius * sin(theta);
-        outer.emplace_back(x, y);
-    }
+  for (int i = 0; i <= num_segments; i++)
+  {
+    double theta = 2.0 * M_PI * double(i) / double(num_segments);
+    double x = cx + radius * cos(theta);
+    double y = cy + radius * sin(theta);
+    outer.emplace_back(x, y);
+  }
 
-    return poly;
+  return poly;
 }
 
 geometry_msgs::msg::Pose pose_point_to_circle(
@@ -25,9 +27,10 @@ geometry_msgs::msg::Pose pose_point_to_circle(
 
   const double dx = px - center.x;
   const double dy = py - center.y;
-  const double dist = std::sqrt(dx*dx + dy*dy);
+  const double dist = std::sqrt(dx * dx + dy * dy);
 
-  if (dist == 0.0) {
+  if (dist == 0.0)
+  {
     throw std::runtime_error("Pose coincides with circle center — direction undefined.");
   }
 
@@ -60,7 +63,6 @@ geometry_msgs::msg::Pose pose_point_to_circle(
   return result;
 }
 
-
 std::vector<geometry_msgs::msg::Pose> generate_circle_poses(
     const point_t &center,
     double radius,
@@ -72,7 +74,8 @@ std::vector<geometry_msgs::msg::Pose> generate_circle_poses(
 
   const double angle_step = 2.0 * M_PI / static_cast<double>(num_poses);
 
-  for (int i = 0; i < num_poses; ++i) {
+  for (int i = 0; i < num_poses; ++i)
+  {
     double theta = offset_rad + i * angle_step;
 
     geometry_msgs::msg::Pose pose;
@@ -100,16 +103,35 @@ std::vector<geometry_msgs::msg::Pose> generate_circle_poses(
   return poses;
 }
 
-
 geometry_msgs::msg::Pose get_robot_pose(
     const tf2_ros::Buffer &buffer,
     const std::string &target_frame,
-    const std::string &robot_name)    
+    const std::string &robot_name,
+    rclcpp::Time now,
+    double sleeptime,
+    int attempts)
 {
+  double waited = 0.0;
+  rclcpp::Duration timeout = rclcpp::Duration::from_seconds(sleeptime);
   geometry_msgs::msg::TransformStamped tf;
-  try {
-    tf = buffer.lookupTransform(target_frame, robot_name+"/base_link", tf2::TimePointZero);
-  } catch (const tf2::TransformException &ex) {
+  std::string robot_frame = robot_name+"/base_link";
+  while (!buffer.canTransform(target_frame, robot_frame, now, timeout))
+  {
+    waited+=sleeptime;
+
+    std::cout<<"Waiting "<<waited<<" seconds for "<<robot_frame<< std::endl;
+
+    if (attempts-- <= 0)
+    {
+      throw std::runtime_error("TF lookup failed: Tried to wait for transform to no avail");
+    }
+  }
+  try
+  {
+    tf = buffer.lookupTransform(target_frame, robot_frame, tf2::TimePointZero);
+  }
+  catch (const tf2::TransformException &ex)
+  {
     throw std::runtime_error("TF lookup failed: " + std::string(ex.what()));
   }
 

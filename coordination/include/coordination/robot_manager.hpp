@@ -22,7 +22,10 @@ std::vector<geometry_msgs::msg::Pose> generate_circle_poses(
 geometry_msgs::msg::Pose get_robot_pose(
     const tf2_ros::Buffer &buffer,
     const std::string &target_frame,
-    const std::string &robot_name);
+    const std::string &robot_name,
+    rclcpp::Time now,
+    double sleeptime = .5,
+    int attempts = 3);
 
 // -------------------- thread-safe queue --------------------
 template <typename T>

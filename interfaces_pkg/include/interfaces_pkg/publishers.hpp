@@ -33,7 +33,7 @@ POINT_CLOUD_REGISTER_POINT_STRUCT(PointXYZProb, // here we assume a XYZ + "test"
                                   (float, x, x)(float, y, y)(float, z, z)(float, probability, probability))
 #endif
 
-void publishMarkers(const rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr pub,
+void publishPointMarkers(const rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr pub,
                     const std::vector<point_t> points,
                     builtin_interfaces::msg::Time stamp,
                     std_msgs::msg::ColorRGBA color);

@@ -507,7 +507,7 @@ Visualization Manager:
       Enabled: true
       Name: Marker
       Namespaces:
-        "": true
+        {}
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -515,6 +515,18 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /mesh_server/Generic
+      Value: true
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Name: MarkerArray
+      Namespaces:
+        server_communicated_poses: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /mesh_server/poses
       Value: true
   Enabled: true
   Global Options:
@@ -563,25 +575,25 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 23.64543342590332
+      Distance: 14.048910140991211
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: -1.7837741374969482
-        Y: -2.1962225437164307
-        Z: -3.471977472305298
+        X: 10.310004234313965
+        Y: 4.618357181549072
+        Z: -0.6062815189361572
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.3354014754295349
+      Pitch: 0.49409228563308716
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 0.42023271322250366
+      Yaw: 5.980349540710449
     Saved: ~
 Window Geometry:
   Displays:
