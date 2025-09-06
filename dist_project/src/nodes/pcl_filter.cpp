@@ -79,40 +79,37 @@ public:
          * SET UP PARAMETERS (COULD BE INPUT FROM LAUNCH FILE/TERMINAL)
          */
         rclcpp::Parameter cloud_topic_param,
-            voxel_leaf_size_param,
             cluster_tolerance_param, min_cluster_size_param, max_cluster_size_param, plane_max_tree_iterations_param, plane_distance_treshold_param,
             z_filter_max_param, max_camera_depth_param, topic_pcl_filtered_param, world_frame_param, topic_cluster_pcl_param;
 
         RCLCPP_INFO(this->get_logger(), "Getting parameters");
 
-        this->get_parameter_or("topic_pcl_raw", cloud_topic_param, rclcpp::Parameter("", "/points"));
-        this->get_parameter_or("topic_pcl_filtered", topic_pcl_filtered_param, rclcpp::Parameter("", "laser_data_frame"));
+        this->get_parameter_or("topics.raw_pcl", cloud_topic_param, rclcpp::Parameter("", "/points"));
+        this->get_parameter_or("topics.filtered_pcl", topic_pcl_filtered_param, rclcpp::Parameter("", "laser_data_frame"));
         this->get_parameter_or("world_frame", world_frame_param, rclcpp::Parameter("", "map"));
-        this->get_parameter_or("topic_cluster_pcl", topic_cluster_pcl_param, rclcpp::Parameter("", "topic_cluster_pcl"));
+        this->get_parameter_or("topics.cluster_pcl", topic_cluster_pcl_param, rclcpp::Parameter("", "topic_cluster_pcl"));
 
-        this->get_parameter_or("max_camera_depth", max_camera_depth_param, rclcpp::Parameter("", 8.0));
+        this->get_parameter_or("shelfino_additions.max_camera_depth", max_camera_depth_param, rclcpp::Parameter("", 8.0));
 
-        this->get_parameter_or("cluster_tolerance", cluster_tolerance_param, rclcpp::Parameter("", 0.05));
-        this->get_parameter_or("min_cluster_size", min_cluster_size_param, rclcpp::Parameter("", 100));
-        this->get_parameter_or("max_cluster_size", max_cluster_size_param, rclcpp::Parameter("", 99000));
-        this->get_parameter_or("plane_max_tree_iterations_max", plane_max_tree_iterations_param, rclcpp::Parameter("", 100));
-        this->get_parameter_or("plane_distance_treshold", plane_distance_treshold_param, rclcpp::Parameter("", 0.02));
+        this->get_parameter_or("pcl_filter_params.cluster_tolerance", cluster_tolerance_param, rclcpp::Parameter("", 0.05));
+        this->get_parameter_or("pcl_filter_params.min_cluster_size", min_cluster_size_param, rclcpp::Parameter("", 100));
+        this->get_parameter_or("pcl_filter_params.max_cluster_size", max_cluster_size_param, rclcpp::Parameter("", 99000));
+        this->get_parameter_or("pcl_filter_params.plane_max_tree_iterations_max", plane_max_tree_iterations_param, rclcpp::Parameter("", 100));
+        this->get_parameter_or("pcl_filter_params.plane_distance_treshold", plane_distance_treshold_param, rclcpp::Parameter("", 0.02));
 
-        this->get_parameter_or("z_filter_max", z_filter_max_param, rclcpp::Parameter("", 8.0));
-        this->get_parameter_or("voxel_leaf_size", voxel_leaf_size_param, rclcpp::Parameter("", 0.25));
+        this->get_parameter_or("pcl_filter_params.z_filter_max", z_filter_max_param, rclcpp::Parameter("", 8.0));
 
         topic_pcl_raw = cloud_topic_param.as_string();
         topic_pcl_filtered_ = topic_pcl_filtered_param.as_string();
         world_frame = world_frame_param.as_string();
         topic_cluster_pcl_ = topic_cluster_pcl_param.as_string();
 
-        voxel_leaf_size = float(voxel_leaf_size_param.as_double());
         cluster_tolerance = cluster_tolerance_param.as_double();
         min_cluster_size = min_cluster_size_param.as_int();
         max_cluster_size = max_cluster_size_param.as_int();
         plane_max_tree_iterations = plane_max_tree_iterations_param.as_int();
         plane_distance_treshold = plane_distance_treshold_param.as_double();
-        z_filter_max = z_filter_max_param.as_double();
+        //z_filter_max = z_filter_max_param.as_double();
         max_camera_depth = max_camera_depth_param.as_double();
         /*
          * SET UP SUBSCRIBER

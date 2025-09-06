@@ -35,14 +35,8 @@ def generate_launch_description():
             #prefix=['gdb -ex run --args'], # debug arguments build with "--cmake-args -DCMAKE_BUILD_TYPE=Debug"
             namespace = "mesh_server",
             parameters=[
-                {'use_sim_time': use_sim_time},  # or True, depending on your setup
-                {"pcl_topic_in": shelfino_config_yaml["topics"]["cluster_pcl"]},
-                {"voxel_size": shelfino_config_yaml["server_params"]["voxel_size"]},
-                {"hz": shelfino_config_yaml["server_params"]["hz"]},
-                {"robot_ids":shelfino_ros_config['init_names']},
-                {"minimum_percentage":shelfino_config_yaml["server_params"]["minimum_percentage"]},
-                {"voxel_topic_out", "voxel_estimate"}
-            ]
+                    {'use_sim_time': use_sim_time},  
+                ]+[configs["map_config"]]
         ))
 
 

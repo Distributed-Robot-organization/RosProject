@@ -117,7 +117,7 @@ void CloudToVoxel::voxelDensityEstimate()
         else {
             p.probability =0.0;
         }
-        std::cout <<"["<< p.probability<<"f "<<keyval.second<< "]";
+        //std::cout <<"["<< p.probability<<"f "<<keyval.second<< "]";
         probability_pcl_->push_back(p);
     }
 
@@ -187,3 +187,25 @@ std::vector<point_t> CloudToVoxel::getUnderExploredVoxels()
     }
     return out_vector;
 }
+
+void CloudToVoxel::getBBoxParameters(point_t &min_pt, point_t &max_pt, point_t &centroid){
+    pcl::getMinMax3D(*this->raw_cloud_, min_pt, max_pt);
+    centroid.x =(max_pt.x + min_pt.x)/2;
+    centroid.y =(max_pt.y + min_pt.y)/2;
+    centroid.z =(max_pt.z + min_pt.z)/2;
+}
+
+bool CloudToVoxel::isEstimateSatified(){
+
+    bool satisfied = true;
+        for (auto keyval : count_per_voxel_)
+    {
+        if (keyval.second<100){
+            satisfied = false;
+        }
+    }
+    return satisfied;
+
+
+}
+

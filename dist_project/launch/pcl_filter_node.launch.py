@@ -39,14 +39,7 @@ def generate_launch_description():
                 namespace = shelfino_name,
                 parameters=[
                     {'use_sim_time': use_sim_time},  # or True, depending on your setup
-                    {"topic_pcl_raw":"/"+shelfino_name+"/f_camera/points"},
-                    {"max_camera_depth":  shelfino_config_yaml["shelfino_additions"]["max_camera_depth"]},
-                    {"topic_pcl_filtered": shelfino_config_yaml["topics"]["filtered_pcl"]},
-                    {"topic_cluster_pcl": shelfino_config_yaml["topics"]["cluster_pcl"]},
-                    {"cluster_tolerance": shelfino_config_yaml["pcl_filter_params"]["cluster_tolerance"]},
-                    {"plane_distance_treshold": shelfino_config_yaml["pcl_filter_params"]["plane_distance_treshold"]},
-                    {"world_frame":"map"}
-                ]
+                ]+[configs["map_config"]]
             ))
         
 

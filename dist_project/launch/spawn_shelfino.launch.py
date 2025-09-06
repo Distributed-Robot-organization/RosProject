@@ -43,7 +43,7 @@ def start_shelfini(configs, shelfino_desc_pkg, shelfino_nav2_pkg):
             shelfino_pose_x = shelfino_config_yaml_ros['init_x'][shelfino]
             shelfino_pose_y = shelfino_config_yaml_ros['init_y'][shelfino]
             shelfino_pose_yaw = shelfino_config_yaml_ros['init_yaw'][shelfino]
-            max_camera_depth = shelfino_config_yaml["shelfino_additions"]["max_camera_depth"]
+            max_camera_depth = shelfino_config_yaml["/**"]["ros__parameters"]["shelfino_additions"]["max_camera_depth"]
 
             print(f"Spawning {shelfino_name} at ({shelfino_pose_x}, {shelfino_pose_y}, {shelfino_pose_yaw})")
 
