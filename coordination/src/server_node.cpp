@@ -21,15 +21,15 @@ public:
     // Parameter definitions---------------
     std::string voxel_topic_out = this->declare_parameter<std::string>("topics.voxel_topic_out", "voxel_estimate_out");
     std::string positions_to_explore_vis = this->declare_parameter<std::string>("topics.positions_to_explore_topic_vis", "positions_to_explore_vis");
-    std::string robot_pcl_topic_ = this->declare_parameter<std::string>("pcl_topic_in", "cluster_pcl");
-    robot_ids_ = this->declare_parameter<std::vector<std::string>>("robot_ids", std::vector<std::string>{"shelfino1", "pollo"});
-    voxel_leaf_size_ = this->declare_parameter<float>("server_params.voxel_size", 0.05);
-    threshold_count_per_voxel_ = this->declare_parameter<int>("server_params.threshold_count_per_voxel", 30);
-    minimum_percentage_ = this->declare_parameter<float>("server_params.minimum_percentage", 0.1);
-    radius_multiplier_ = this->declare_parameter<float>("server_params.radius_multiplier", 2.);
+    std::string robot_pcl_topic_ = this->declare_parameter<std::string>("server.pcl_topic_in", "cluster_pcl");
+    robot_ids_ = this->declare_parameter<std::vector<std::string>>("init_names", std::vector<std::string>{"shelfino1", "pollo"});
+    voxel_leaf_size_ = this->declare_parameter<float>("server.voxel_size", 0.05);
+    threshold_count_per_voxel_ = this->declare_parameter<int>("server.threshold_count_per_voxel", 30);
+    minimum_percentage_ = this->declare_parameter<float>("server.minimum_percentage", 0.1);
+    radius_multiplier_ = this->declare_parameter<float>("server.radius_multiplier", 2.);
     world_frame_ = this->declare_parameter<std::string>("world_frame", "map");
 
-    hz_ = this->declare_parameter<int>("server_params.hz", 3);
+    hz_ = this->declare_parameter<int>("server.hz", 3);
     if (robot_ids_.empty())
     {
       RCLCPP_FATAL(get_logger(), "No robot_ids given!");
@@ -192,8 +192,8 @@ private:
       if (!sketch_scan_done_)
       {
         // Without a sketch scan of the object a first point cloud received from all the robots,
-        // such that we have different perspective of same object
-        // is impossible to obtain a general bounding box
+        // such that we have different perspective of same object,
+        // is very difficult to obtain a general bounding box
 
         if (!fleet_is_warned_)
         {
@@ -226,13 +226,14 @@ private:
         // if the sketch scan is completed we can start the procedure of full scan
         // The full scan is a scan all around the object to detect at least all the interesting
         // voxels.
-        first_full_scan_completed_ = true; // TODO:REMOVE
+        first_full_scan_completed_ = true; // TODO:REMOVE and define full scan procedure
         if (!first_full_scan_completed_)
         {
         }
         else
         {
           // Now we only need to scan the most uncertain parts of the object
+          // TODO: add a waiting list to be sure of sending requests only when all robots completed their scan
           pcl_manager_->voxelDensityEstimate();
           if (!pcl_manager_->isEstimateSatified())
           {
@@ -245,6 +246,7 @@ private:
 
   void sendUnderExplored()
   {
+    // TODO: Refine the UnderExplored to set a k-NN and define as many clusters as robot_ids
     auto points_to_check = pcl_manager_->getUnderExploredVoxels();
     auto probability_pcl = pcl_manager_->probability_pcl_;
 
@@ -260,6 +262,7 @@ private:
     publishVoxelEstimate(voxel_publisher_, probability_pcl, time_stamp_);
   }
 
+  // Get the cluster main and first positions to send to all the robots in the fleet
   void warnFleet()
   {
     point_t p_max, p_min, centroid;

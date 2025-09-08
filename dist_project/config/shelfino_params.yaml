@@ -35,6 +35,7 @@
 
 /**:
   ros__parameters:
+    use_sim_time: true
     map: "plane_2" # Maps can be "test_world" or "plane_2"
     world_frame: "map"
     init_names: ["shelfino1", "pollo"] # Names of the robots to be spawned
@@ -49,13 +50,14 @@
     # init_y: [4.5] # Y position of the robots
     # init_yaw: [0.0] # Yaw of the robots
 
-    server_params:
+    server:
       voxel_size: 0.05 #meters
       hz: 1 #update rate of the cluster
       maximum_count_per_voxel: 250 #number of point per voxel
       minimum_percentage: 0.1 # ... of the maximum detected to be considered when we are finding the voxels to analyze again
       voxel_estimate: "voxel_estimate_out"
       threshold_count_per_voxel: 30
+      pcl_topic_in: "cluster_pcl"
 
     qos_overrides:
       /parameter_events:
@@ -70,14 +72,13 @@
       raw_pcl: "f_camera/points"
       cluster_pose: "c_position"
       cluster_pcl: "cluster_pcl"
+      positions_to_explore_topic_vis: "positions_to_explore_vis"
       cluster_centroid: "median" # "median" and "centroid"  are usable values
       
 
     pcl_filter_params:
       cluster_tolerance: .05
       plane_distance_treshold: 0.05
-
-
 
     shelfino_additions:
       max_camera_depth: 8.0
