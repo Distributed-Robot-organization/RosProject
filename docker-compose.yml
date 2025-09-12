@@ -2,6 +2,7 @@ version: "3.8"
 
 services:
   ros_docker:
+    user: "${UID}:${GID}"
     image: dist_docker
     container_name: ros_docker
     environment:

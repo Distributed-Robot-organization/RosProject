@@ -84,10 +84,10 @@ public:
 
         RCLCPP_INFO(this->get_logger(), "Getting parameters");
 
-        this->get_parameter_or("topics.raw_pcl", cloud_topic_param, rclcpp::Parameter("", "/points"));
-        this->get_parameter_or("topics.filtered_pcl", topic_pcl_filtered_param, rclcpp::Parameter("", "laser_data_frame"));
         this->get_parameter_or("world_frame", world_frame_param, rclcpp::Parameter("", "map"));
         this->get_parameter_or("topics.cluster_pcl", topic_cluster_pcl_param, rclcpp::Parameter("", "topic_cluster_pcl"));
+        this->get_parameter_or("topics.raw_pcl", cloud_topic_param, rclcpp::Parameter("", "/points"));
+        this->get_parameter_or("topics.filtered_pcl", topic_pcl_filtered_param, rclcpp::Parameter("", "laser_data_frame"));
 
         this->get_parameter_or("shelfino_additions.max_camera_depth", max_camera_depth_param, rclcpp::Parameter("", 8.0));
 

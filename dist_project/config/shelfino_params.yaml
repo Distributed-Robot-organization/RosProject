@@ -36,19 +36,26 @@
 /**:
   ros__parameters:
     use_sim_time: true
-    map: "plane_2" # Maps can be "test_world" or "plane_2"
     world_frame: "map"
-    init_names: ["shelfino1", "pollo"] # Names of the robots to be spawned
-    init_rand: [false, false] # If true, the robots will be spawned in random positions
-    init_x: [9.3, 14.24] # X position of the robots
-    init_y: [1.2, 5.56] # Y position of the robots
-    init_yaw: [0.65, -2.37] # Yaw of the robots
+    # map: "plane_2" # Maps can be "test_world" or "plane_2"
+    # init_names: ["shelfino1", "pollo"] # Names of the robots to be spawned
+    # init_rand: [false, false] # If true, the robots will be spawned in random positions
+    # init_x: [9.3, 14.24] # X position of the robots
+    # init_y: [1.2, 5.56] # Y position of the robots
+    # init_yaw: [0.65, -2.37] # Yaw of the robots
 
     # init_names: ["shelfino1"] # Names of the robots to be spawned
     # init_rand: [false] # If true, the robots will be spawned in random positions
     # init_x: [5.0] # X position of the robots
     # init_y: [4.5] # Y position of the robots
     # init_yaw: [0.0] # Yaw of the robots
+
+    map: "big_map" # Maps can be "test_world" or "plane_2"
+    init_names: ["shelfino1","pollo"] # Names of the robots to be spawned
+    init_rand: [false, false] # If true, the robots will be spawned in random positions
+    init_x: [-12.6,-6.0] # X position of the robots
+    init_y: [-20.0,27.0] # Y position of the robots
+    init_yaw: [0.65,-.47] # Yaw of the robots
 
     server:
       voxel_size: 0.05 #meters
@@ -66,19 +73,27 @@
           durability: transient_local
           history: keep_last
           reliability: reliable
-          
+
+    initial_goals:
+      pollo: [-5.4,18.0,-1.53, 10.0,21.0,1.69]
+      shelfino1: [3.8,-11.7,-1.7, -12.1,-16.86,1.69, -24.0,0.5,1.68, 1.0,1.34,-1.57]
+
     topics:
       filtered_pcl: "filtered_pcl"
       raw_pcl: "f_camera/points"
       cluster_pose: "c_position"
       cluster_pcl: "cluster_pcl"
-      positions_to_explore_topic_vis: "positions_to_explore_vis"
+      positions_to_explore_topic_vis: "poses"
       cluster_centroid: "median" # "median" and "centroid"  are usable values
-      
+    
+    robot_sensors:
+      vision_manager: "lifecycled_pcl"
 
     pcl_filter_params:
       cluster_tolerance: .05
-      plane_distance_treshold: 0.05
+      plane_distance_treshold: 0.06
+      noise_mean: .0
+      noise_dev: .01
 
     shelfino_additions:
       max_camera_depth: 8.0

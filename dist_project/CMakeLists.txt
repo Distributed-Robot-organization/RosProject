@@ -22,6 +22,8 @@ find_package(vision_msgs)
 find_package(pcl_ros REQUIRED)
 find_package(interfaces_pkg REQUIRED)
 
+find_package(rclcpp_lifecycle REQUIRED)
+find_package(lifecycle_msgs REQUIRED)
 
 find_package(PCL REQUIRED COMPONENTS common io filters)
 
@@ -33,36 +35,59 @@ add_definitions(${PCL_DEFINITIONS})
 
 #<<<< Cluster Filter Node ---
 
-add_executable (pcl_filter_node
-   src/nodes/pcl_filter.cpp)
+# add_executable (pcl_filter_node
+#    src/nodes/pcl_filter.cpp)
 
-ament_target_dependencies(pcl_filter_node rclcpp tf2_ros tf2 tf2_eigen sensor_msgs visualization_msgs geometry_msgs pcl_ros)
+# ament_target_dependencies(pcl_filter_node rclcpp tf2_ros tf2 tf2_eigen sensor_msgs visualization_msgs geometry_msgs pcl_ros)
 
-target_link_libraries (pcl_filter_node ${PCL_LIBRARIES})
-install(TARGETS
-pcl_filter_node
-  DESTINATION lib/${PROJECT_NAME})
+# target_link_libraries (pcl_filter_node ${PCL_LIBRARIES})
+# install(TARGETS
+# pcl_filter_node
+#   DESTINATION lib/${PROJECT_NAME})
 #--- Cluster Filter Node [END] >>>#
 
 #<<<< Cluster Finder NodeS ####
-add_executable (first_cluster_publisher
-   src/nodes/first_cluster_publisher.cpp)
+# add_executable (first_cluster_publisher
+#    src/nodes/first_cluster_publisher.cpp)
 
-ament_target_dependencies(first_cluster_publisher rclcpp tf2_ros tf2 tf2_eigen sensor_msgs visualization_msgs geometry_msgs interfaces_pkg)
+# ament_target_dependencies(first_cluster_publisher rclcpp tf2_ros tf2 tf2_eigen sensor_msgs visualization_msgs geometry_msgs interfaces_pkg)
 
-target_link_libraries (first_cluster_publisher)
+# target_link_libraries (first_cluster_publisher)
+# install(TARGETS
+# first_cluster_publisher
+#   DESTINATION lib/${PROJECT_NAME})
+
+# add_executable (first_cluster_subscriber
+#    src/nodes/first_cluster_subscriber.cpp)
+
+# ament_target_dependencies(first_cluster_subscriber rclcpp tf2_ros tf2 tf2_eigen sensor_msgs visualization_msgs geometry_msgs nav2_msgs interfaces_pkg)
+
+# target_link_libraries (first_cluster_subscriber)
+# install(TARGETS
+# first_cluster_subscriber
+#   DESTINATION lib/${PROJECT_NAME})
+
+
+
+add_executable (robot_main_logic
+  src/nodes/robot_main_logic.cpp)
+
+ament_target_dependencies(robot_main_logic rclcpp  rclcpp_lifecycle lifecycle_msgs tf2_ros tf2 tf2_eigen sensor_msgs visualization_msgs geometry_msgs nav2_msgs interfaces_pkg)
+
+target_link_libraries (robot_main_logic)
+
 install(TARGETS
-first_cluster_publisher
+robot_main_logic
   DESTINATION lib/${PROJECT_NAME})
 
-add_executable (first_cluster_subscriber
-   src/nodes/first_cluster_subscriber.cpp)
+add_executable (lifecycled_pcl
+   src/nodes/lifecycled_pcl.cpp)
 
-ament_target_dependencies(first_cluster_subscriber rclcpp tf2_ros tf2 tf2_eigen sensor_msgs visualization_msgs geometry_msgs nav2_msgs interfaces_pkg)
+ament_target_dependencies(lifecycled_pcl rclcpp  rclcpp_lifecycle lifecycle_msgs tf2_ros tf2 tf2_eigen sensor_msgs visualization_msgs geometry_msgs pcl_ros)
 
-target_link_libraries (first_cluster_subscriber)
+target_link_libraries (lifecycled_pcl ${PCL_LIBRARIES})
 install(TARGETS
-first_cluster_subscriber
+lifecycled_pcl
   DESTINATION lib/${PROJECT_NAME})
 
 #### Cluster Finder NodeS [END] >>>#

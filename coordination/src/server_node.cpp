@@ -60,10 +60,10 @@ public:
 
     // Publishers-----------------------
     voxel_publisher_ = create_publisher<sensor_msgs::msg::PointCloud2>(voxel_topic_out, 200);
-    under_explored_publisher_ = create_publisher<visualization_msgs::msg::Marker>(positions_to_explore_vis, 200);
+    under_explored_publisher_ = create_publisher<visualization_msgs::msg::Marker>("points_to_explore_markers", 200);
     points_generic_ = create_publisher<visualization_msgs::msg::Marker>("Generic", 200);
     circle_pub_ = create_publisher<visualization_msgs::msg::Marker>("circle_pub", 200);
-    pose_pub_ = create_publisher<visualization_msgs::msg::MarkerArray>("poses", 200);
+    pose_pub_ = create_publisher<visualization_msgs::msg::MarkerArray>(positions_to_explore_vis, 200);
     // Variables definition-------------
     pcl_manager_ = new CloudToVoxel(voxel_leaf_size_, threshold_count_per_voxel_, minimum_percentage_);
 
@@ -277,7 +277,7 @@ private:
     auto poses = generate_circle_poses(centroid, radius_, robot_ids_.size(), angle_to_center);
     publishPoligon(circle_pub_, search_perimeter_, time_stamp_, violet);
     publishPoseMarkers(pose_pub_, poses, time_stamp_, green);
-    RCLCPP_INFO(this->get_logger(), "The fleet is warned to go towards the object advertised by %s", std::string(first_discoverer_));
+    RCLCPP_INFO(this->get_logger(), "The fleet is warned to go towards the object advertised by %s", first_discoverer_.c_str());
   }
   void startEstimating()
   {

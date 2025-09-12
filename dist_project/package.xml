@@ -35,7 +35,8 @@
   <depend>pcl_ros</depend>
   <depend>tf2_eigen</depend>
   <depend>interfaces_pkg</depend>
-
+  <depend>rclcpp_lifecycle</depend>
+  <depend>lifecycle_msgs</depend>
 
 
   <depend>shelfino_gazebo</depend>

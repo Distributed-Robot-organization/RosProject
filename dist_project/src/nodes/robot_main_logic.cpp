@@ -1,6 +1,5 @@
 #include "rclcpp/rclcpp.hpp"
-#include "lifecycle_msgs/srv/change_state.hpp"
-#include "lifecycle_msgs/srv/get_state.hpp"
+
 #include <rclcpp/rclcpp.hpp>
 #include <interfaces_pkg/msg/robot_pose.hpp>
 #include <geometry_msgs/msg/pose_stamped.hpp>
@@ -11,6 +10,11 @@
 #include "visualization_msgs/msg/marker_array.hpp"
 #include "tf2_ros/buffer.h"
 #include "tf2_ros/transform_listener.h"
+
+#include <rclcpp_lifecycle/lifecycle_node.hpp>
+#include <lifecycle_msgs/srv/change_state.hpp>
+#include <lifecycle_msgs/srv/get_state.hpp>
+#include "lifecycle_msgs/msg/transition.hpp"
 
 #include <memory>
 #include <chrono>
@@ -35,18 +39,23 @@ public:
         // Parameter Definitions
         robot_id_ = this->declare_parameter<std::string>("robot_id", "pollo");
         std::string topic_f_cluster_out = this->declare_parameter<std::string>("cluster_pose_topic", "f_cluster_out");
-        std::string topic_pcl_in = this->declare_parameter<std::string>("topic_pcl_in", "f_cluster_out");
-        auto server_positions = this->declare_parameter<std::string>("server_positions", "positions_to_explore_vis");
+        std::string topic_pcl_in = this->declare_parameter<std::string>("topics.cluster_pcl", "f_cluster_out");
+        auto pcl_to_server = this->declare_parameter<std::string>("server.pcl_topic_in", "f_cluster_out");
+        auto server_positions = "/mesh_server/"+this->declare_parameter<std::string>("topics.positions_to_explore_topic_vis", "positions_to_explore_vis");
+        sensor_node_ = this->declare_parameter<std::string>("robot_sensors.vision_manager", "vision_node");
         frame_id_ = this->declare_parameter<std::string>("world_frame", "map");
         initial_goals_ = this->declare_parameter<std::vector<double>>("initial_goals." + robot_id_, {.0, .0, .0});
 
-        auto robot_ids_ = this->declare_parameter<std::vector<std::string>>("other_shelfino_ids", {});
+        auto robot_ids = this->declare_parameter<std::vector<std::string>>("init_names", std::vector<std::string>{"shelfino1", "pollo"});
+
         path_client_ = rclcpp_action::create_client<ComputePathToPose>(this, "compute_path_to_pose");
         follow_client_ = rclcpp_action::create_client<FollowPath>(this, "follow_path");
+
+        // Set initial poses to follow to explore the enviroment [x_cord0,y_cord0,angle0, x_cord1,y_cord1,angle1,...]
         if (initial_goals_.size() % 3 != 0)
             throw std::runtime_error("The intial goals must be a multiple of 3");
         size_t i = 0;
-        while (i < initial_goals_.size())
+        while (i * 3 < initial_goals_.size())
         {
             geometry_msgs::msg::Pose pose;
             pose.position.x = initial_goals_[i * 3];
@@ -58,89 +67,190 @@ public:
             pose.orientation.y = q.y();
             pose.orientation.z = q.z();
             pose.orientation.w = q.w();
-            initial_goals_poses_.push_back(pose);
+            explore_poses_.push_back(pose);
             i++;
         }
-        for (auto id : robot_ids_)
+        for (auto id : robot_ids)
         {
             if (id != robot_id_)
                 other_robot_ids_.push_back(id);
         }
-
+        // Plan making
+        // At start the exploring flag is true such that the robot will
+        // follow the list of poses until the object is found
+        std::string change_state_client = sensor_node_ + "/change_state";
+        std::string get_state_client = sensor_node_ + "/get_state";
+        RCLCPP_INFO(this->get_logger(), "%s", sensor_node_.c_str());
         // Sensors managment
         client_change_state_ =
-            this->create_client<lifecycle_msgs::srv::ChangeState>("vision_node/change_state");
+            this->create_client<lifecycle_msgs::srv::ChangeState>(change_state_client.c_str());
         client_get_state_ =
-            this->create_client<lifecycle_msgs::srv::GetState>("vision_node/get_state");
+            this->create_client<lifecycle_msgs::srv::GetState>(get_state_client.c_str());
         pcl_subscriber_ =
             this->create_subscription<sensor_msgs::msg::PointCloud2>(
-                topic_pcl_in, 1, std::bind(&pcl_callback, this, std::placeholders::_1));
+                topic_pcl_in, 1, std::bind(&RobotManager::pcl_callback, this, std::placeholders::_1));
         // Server managment
-        server_position_subsciber_ = this->create_subscription<visualization_msgs::msg::MarkerArray>(server_positions, 1, std::bind(&server_callback, this, std::placeholders::_1));
+        pcl_publisher_ = create_publisher<sensor_msgs::msg::PointCloud2>(pcl_to_server, 200);
+
+        server_position_subsciber_ = this->create_subscription<visualization_msgs::msg::MarkerArray>(server_positions, 1, std::bind(&RobotManager::server_callback, this, std::placeholders::_1));
+        rclcpp::on_shutdown([this]()
+                            { this->onShutdown(); });
+
+        RCLCPP_INFO(this->get_logger(), "Given %d checkpoints to explore", explore_poses_.size());
+        last_state_requested_ = lifecycle_msgs::msg::Transition::TRANSITION_DESTROY;
+        change_state_sensor(lifecycle_msgs::msg::Transition::TRANSITION_CONFIGURE);
+        change_state_sensor(lifecycle_msgs::msg::Transition::TRANSITION_ACTIVATE);
+        plan_manager();
     }
 
 private:
-    std::string robot_id_, frame_id_;
+    std::string robot_id_, frame_id_, sensor_node_;
     std::vector<std::string> other_robot_ids_;
     std::vector<double> initial_goals_;
-    std::vector<geometry_msgs::msg::Pose> initial_goals_poses_;
-
-    // Decision handling
-    bool moving_, going_around_, cmd_stop_robot_;
-    int following_position_number_ = 0;
-
-    tf2_ros::Buffer tf_buffer_;
-    tf2_ros::TransformListener tf_listener_;
-    std::mutex m_;
 
     // Vision Handling
     rclcpp::Client<lifecycle_msgs::srv::ChangeState>::SharedPtr client_change_state_;
     rclcpp::Client<lifecycle_msgs::srv::GetState>::SharedPtr client_get_state_;
     rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr pcl_subscriber_;
+    uint8_t last_state_requested_, last_transition_success_ = false;
 
     // Movement handling
     rclcpp_action::Client<ComputePathToPose>::SharedPtr path_client_;
     rclcpp_action::Client<FollowPath>::SharedPtr follow_client_;
     GoalHandleFollowPath::SharedPtr follow_goal_handle_;
+    std::vector<geometry_msgs::msg::Pose> explore_poses_;
+    u_int exploring_position_number_ = 0;
 
     // Server Communication
     rclcpp::Subscription<visualization_msgs::msg::MarkerArray>::SharedPtr server_position_subsciber_;
-    rclcpp::Publisher<sensor_msgs::msg::PointCloud2> pcl_publisher_;
+    rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pcl_publisher_;
+    geometry_msgs::msg::Pose pose_to_follow_;
+
+    // Decision handling
+    bool moving_ = false, exploring_ = true, received_position_ = false, pcl_called_ = false, following_commands_ = false, arrived_to_position_ = false,
+                              allow_pcl_input_ = true, interrupted_movement_ = false, disgard_movement_ = false;
+
+    tf2_ros::Buffer tf_buffer_;
+    tf2_ros::TransformListener tf_listener_;
+    std::mutex plan_, server_, pcl_;
 
     void plan_manager()
     {
-        std::lock_guard<std::mutex> lock(m_);
+        std::lock_guard<std::mutex> lock(plan_);
+        RCLCPP_INFO(this->get_logger(), "received update, status :\n moving_ %d, exploring_ %d, received_position_%d, pcl_called_%d, following_commands_%d, arrived_to_position_%d,allow_pcl_input_%d, interrupted_movement_%d,disgard_movement_%d",
+                    moving_, exploring_, received_position_, pcl_called_, following_commands_, arrived_to_position_, allow_pcl_input_, interrupted_movement_,disgard_movement_);
 
-        if (cmd_stop_robot_)
+        stopMovement();
+        // Used to iterrupt actions until at least a command from server is sent
+        if(received_position_)following_commands_ = true; 
+        if (exploring_ && (received_position_ || pcl_called_))
         {
-            RCLCPP_INFO(this->get_logger(), "The %s was commanded to stop;", std::string(robot_id_));
-            stopMovement();
-            cmd_stop_robot_ = false;
+            // should be the only instance of deactivating exloring since true is the default value and
+            // should be deactivated only when the object is discovered
+            RCLCPP_INFO(this->get_logger(), "Object Found");
+            exploring_ = false;
+            deactivate_pcl();
+        }
+        if (exploring_)
+        {
+            // cycle between the checkpoints to search the space
+            if (exploring_position_number_ < (explore_poses_.size() - 1))
+                exploring_position_number_++;
+            else
+                exploring_position_number_ = 0;
+            auto pose_to_explore = explore_poses_[exploring_position_number_];
+            RCLCPP_INFO(this->get_logger(), "Exploring checkpoint %d at %f %f %f", exploring_position_number_,
+                        pose_to_explore.position.x,
+                        pose_to_explore.position.y,
+                        pose_to_explore.orientation.z);
+
+            goToPose(pose_to_explore);
+        }
+        else if (!moving_ && following_commands_)
+        {
+
+            if (received_position_)
+            {
+                goToPose(pose_to_follow_);
+            }
+            else if (arrived_to_position_)
+            {
+                arrived_to_position_ = false;
+                allow_pcl_input_ = true;
+                change_state_sensor(lifecycle_msgs::msg::Transition::TRANSITION_ACTIVATE);
+            }
+            else
+            {
+                if (interrupted_movement_)
+                {
+                    // This state is reached only when the server sends a position, but the robot didn't reach the position.
+                    RCLCPP_ERROR(this->get_logger(), "Command sent before completing task");
+                }
+            }
+        }
+        if (received_position_)
+            received_position_ = false;
+
+        if (received_position_)
+            interrupted_movement_ = false;
+
+        if (pcl_called_)
+        {
+            pcl_called_ = false;
+            // to allow only one pcl at a time
+            deactivate_pcl();
+        }
+        disgard_movement_ = false;
+
+    }
+    void deactivate_pcl(){
+        if(allow_pcl_input_){
+        allow_pcl_input_ = false;
+        change_state_sensor(lifecycle_msgs::msg::Transition::TRANSITION_DEACTIVATE);
         }
     }
 
     void server_callback(const visualization_msgs::msg::MarkerArray positions)
     {
-        cmd_stop_robot_ = true;
-        std::map<geometry_msgs::msg::Pose, double> pose_distance;
-        auto robot_pose = get_robot_pose(tf_buffer_, frame_id_, robot_id_, this->get_clock()->now());
-        for (auto marker : positions.markers)
+        std::lock_guard<std::mutex> lock(server_);
+
+        RCLCPP_INFO(this->get_logger(), "Server sent message, going to position");
+
+        auto robot_pose = get_robot_pose(tf_buffer_, frame_id_, robot_id_, this->get_clock()->now(), .5, 3);
+        double min_distance = std::numeric_limits<double>::max();
+        geometry_msgs::msg::Pose nearest_pose;
+
+        auto robot_position = robot_pose.position;
+
+        for (const auto &marker : positions.markers)
         {
-            auto p = marker.pose.position;
-            auto distance = sqrt(pow(p.x - robot_pose.position.x, 2) + pow(p.y - robot_pose.position.y, 2));
-            pose_distance.emplace((marker.pose,distance));
+            auto marker_position = marker.pose.position;
+            double dist = std::sqrt(
+                std::pow(marker_position.x - robot_position.x, 2) +
+                std::pow(marker_position.y - robot_position.y, 2));
+            if (dist < min_distance)
+            {
+                min_distance = dist;
+                nearest_pose = marker.pose;
+            }
         }
-        std::sort(pose_distance.begin(), pose_distance.end());
-        pose_distance.
+        pose_to_follow_ = nearest_pose;
+        received_position_ = true;
         plan_manager();
     }
 
     void pcl_callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr pcl)
     {
-        cmd_stop_robot_ = true;
+        std::lock_guard<std::mutex> lock(pcl_);
 
-        pcl_publisher_.publish(*pcl);
-        plan_manager();
+        if (allow_pcl_input_)
+        {
+            RCLCPP_INFO(this->get_logger(), "Sensor detected pcl, sending to Server");
+            pcl_publisher_->publish(*pcl);
+            pcl_called_ = true;
+            RCLCPP_INFO(this->get_logger(), "Calling plan_manager");
+            plan_manager();
+        }
     }
 
     bool wait_for_servers()
@@ -159,16 +269,21 @@ private:
             if (result.code == rclcpp_action::ResultCode::SUCCEEDED)
             {
                 RCLCPP_INFO(this->get_logger(), "FollowPath succeeded!");
+                arrived_to_position_ = true;
             }
             else if (result.code == rclcpp_action::ResultCode::CANCELED)
             {
+                interrupted_movement_ = true;
                 RCLCPP_INFO(this->get_logger(), "FollowPath canceled!");
             }
             else
             {
                 RCLCPP_ERROR(this->get_logger(), "FollowPath failed");
             }
-            moving_ = false; // allow new goals again
+            moving_ = false; // allow new goals are
+            // call again plan manager such that if we are exploring, it can trigger another follow goal
+            // Or activate the vision module
+            plan_manager();
         };
 
         // Send the goal asynchronously
@@ -194,6 +309,7 @@ private:
     void
     stopMovement()
     {
+        disgard_movement_ = true;
         if (follow_goal_handle_)
         {
             RCLCPP_INFO(this->get_logger(), "Cancelling current goal...");
@@ -209,12 +325,12 @@ private:
 
     void goToPose(geometry_msgs::msg::Pose goal_pose)
     {
+        disgard_movement_ = false;
         if (!wait_for_servers())
         {
             RCLCPP_ERROR(this->get_logger(), "One or more action servers not available!");
             return;
         }
-
         auto goal_msg = ComputePathToPose::Goal();
         goal_msg.goal.pose = goal_pose;
 
@@ -226,7 +342,12 @@ private:
         {
             if (result.code == rclcpp_action::ResultCode::SUCCEEDED)
             {
+                if(disgard_movement_){
+                    // Can happen that the pcl is found in the interval between stopping and computing a new plan
+                    RCLCPP_INFO(this->get_logger(), "Path computed, but disgarded");
+                }
                 RCLCPP_INFO(this->get_logger(), "Path computed, sending to FollowPath...");
+
                 this->followPath(result.result->path);
             }
             else
@@ -236,6 +357,8 @@ private:
         };
 
         path_client_->async_send_goal(goal_msg, send_goal_options);
+        RCLCPP_INFO(this->get_logger(), "Going to %f, %f, %f", goal_pose.position.x, goal_pose.position.y, goal_pose.orientation.z);
+        moving_ = true;
     }
 
     geometry_msgs::msg::Pose get_robot_pose(
@@ -278,35 +401,100 @@ private:
         return pose;
     }
 
-    void activate_vision()
+    template <typename FutureT, typename WaitTimeT>
+    std::future_status
+    wait_for_result(
+        FutureT &future,
+        WaitTimeT time_to_wait)
     {
-        if (!client_change_state_->wait_for_service(1s))
+        auto end = std::chrono::steady_clock::now() + time_to_wait;
+        std::chrono::milliseconds wait_period(100);
+        std::future_status status = std::future_status::timeout;
+        do
         {
-            RCLCPP_WARN(this->get_logger(), "Service not available yet...");
-            return;
-        }
-
-        auto req = std::make_shared<lifecycle_msgs::srv::ChangeState::Request>();
-        req->transition.id = lifecycle_msgs::msg::Transition::TRANSITION_ACTIVATE;
-
-        auto future = client_change_state_->async_send_request(req);
-        RCLCPP_INFO(this->get_logger(), "Requested sensor activation");
+            auto now = std::chrono::steady_clock::now();
+            auto time_left = end - now;
+            if (time_left <= std::chrono::seconds(0))
+            {
+                break;
+            }
+            status = future.wait_for((time_left < wait_period) ? time_left : wait_period);
+        } while (rclcpp::ok() && status != std::future_status::ready);
+        return status;
     }
 
-    void deactivate_vision()
+    bool
+    change_state_sensor(std::uint8_t transition, std::chrono::seconds time_out = 3s)
     {
-        auto req = std::make_shared<lifecycle_msgs::srv::ChangeState::Request>();
-        req->transition.id = lifecycle_msgs::msg::Transition::TRANSITION_DEACTIVATE;
+        // lifecycle_msgs::msg::Transition::TRANSITION_CONFIGURE;
+        // lifecycle_msgs::msg::Transition::TRANSITION_ACTIVATE;
+        // lifecycle_msgs::msg::Transition::TRANSITION_DEACTIVATE;
+        if (last_state_requested_ != transition || !last_transition_success_)
+        {
+            last_state_requested_ = transition;
+            auto request = std::make_shared<lifecycle_msgs::srv::ChangeState::Request>();
+            request->transition.id = transition;
 
-        auto future = client_change_state_->async_send_request(req);
-        RCLCPP_INFO(this->get_logger(), "Requested sensor deactivation");
+            if (!client_change_state_->wait_for_service(time_out))
+            {
+                RCLCPP_ERROR(
+                    get_logger(),
+                    "Service %s is not available.",
+                    client_change_state_->get_service_name());
+                return false;
+            }
+
+            // We send the request with the transition we want to invoke.
+            auto future_result = client_change_state_->async_send_request(request).future.share();
+
+            // Let's wait until we have the answer from the node.
+            // If the request times out, we return an unknown state.
+            auto future_status = wait_for_result(future_result, time_out);
+
+            if (future_status != std::future_status::ready)
+            {
+                RCLCPP_ERROR(
+                    get_logger(), "Server time out while getting current state for node %s", sensor_node_.c_str());
+                return false;
+            }
+
+            // We have an answer, let's print our success.
+            if (future_result.get()->success)
+            {
+                RCLCPP_INFO(
+                    get_logger(), "Transition %d successfully triggered.", static_cast<int>(transition));
+                last_transition_success_ = true;
+                return true;
+            }
+            else
+            {
+                RCLCPP_WARN(
+                    get_logger(), "Failed to trigger transition %u", static_cast<unsigned int>(transition));
+                last_transition_success_ = false;
+                return false;
+            }
+        }
+        else
+        {
+            RCLCPP_INFO(this->get_logger(), "Already requested %u transition, Ignoring Request", transition);
+            return true;
+        }
+    }
+
+    void onShutdown()
+    {
+        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Node is shutting down! Cleaning up...");
+        stopMovement();
+        // Your custom cleanup logic here
     }
 };
 
 int main(int argc, char **argv)
 {
     rclcpp::init(argc, argv);
-    rclcpp::spin(std::make_shared<RobotManager>());
+    auto node = std::make_shared<RobotManager>();
+
+    rclcpp::spin(node);
     rclcpp::shutdown();
     return 0;
 }

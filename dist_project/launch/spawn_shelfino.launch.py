@@ -238,7 +238,7 @@ def generate_launch_description():
     configs = define_yaml_templates(configs)
 
     #Defined config files
-    configs["rviz_config_file"]  = LaunchConfiguration('rviz_config_file', default=os.path.join(dist_project_pkg, 'config', 'overall_map.rviz'))
+    configs["rviz_config_file"]  = LaunchConfiguration('rviz_config_file', default=os.path.join(dist_project_pkg, 'config', 'shelfino_persective.rviz'))
     configs["gazebo_world_file"] = LaunchConfiguration('gazebo_world_file', default=os.path.join(dist_project_pkg, 'worlds', f'{map_name}/{map_name}.world'))
 
     # Navigation arguments
@@ -249,10 +249,25 @@ def generate_launch_description():
     nodes_to_launch = []
     # Include the robot_state_publisher launch file, provided by our own package. Force sim time to be enabled
     # !!! MAKE SURE YOU SET THE PACKAGE NAME CORRECTLY !!!
-    #
-    nodes_to_launch, shelfini_names = start_shelfini(configs, shelfino_desc_pkg, shelfino_nav2_pkg)
+    
+
+
+
+    shelfini_nodes, shelfini_names = start_shelfini(configs, shelfino_desc_pkg, shelfino_nav2_pkg)
     #nodes_to_launch+=evaluate_rviz(configs, shelfini_names)
 
+        
+    nodes_to_launch+=[Node(
+            package='rviz2',
+            executable='rviz2',
+            name='rviz2',
+            output='screen',
+            parameters=[
+                {'use_sim_time': configs["use_sim_time"]},  # or True, depending on your setup
+            ],
+             arguments=['-d',"/home/computer/src/Distributed_project/dist_project/config/overall_map.rviz"]
+
+    )]
 
     gazebo_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource([
@@ -266,18 +281,13 @@ def generate_launch_description():
             'spawn_shelfino': 'false',
         }.items()
     )
+    gazebo_launch = TimerAction(
+            period=2.0,
+            actions=[gazebo_launch])
+    
+    
+    nodes_to_launch +=[ TimerAction(
+        period=2.0,
+            actions=shelfini_nodes)]
 
-    """ if len(shelfini_names)==2:
-        nodes_to_launch+=[
-            Node(
-                package='rviz2',
-                executable='rviz2',
-                name='rviz2',
-                output='screen',
-                arguments=['-d', configs['rviz_config_file']],
-                parameters=[
-                    {'use_sim_time': "true" if configs['use_sim_time'] == 'true' else "false"}
-                ],
-            )
-        ] """
     return LaunchDescription(nodes_to_launch+[gazebo_launch])
