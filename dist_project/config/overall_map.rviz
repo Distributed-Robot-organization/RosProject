@@ -10,6 +10,7 @@ Panels:
         - /RobotModel1/Description Topic1
         - /TF1
         - /Marker3
+        - /Marker4
         - /MarkerArray1
         - /Path1
         - /Path2
@@ -32,7 +33,7 @@ Panels:
     Experimental: false
     Name: Time
     SyncMode: 0
-    SyncSource: ""
+    SyncSource: PointCloud2
 Visualization Manager:
   Class: ""
   Displays:
@@ -407,7 +408,7 @@ Visualization Manager:
       Use rainbow: true
       Value: true
     - Class: rviz_default_plugins/Marker
-      Enabled: true
+      Enabled: false
       Name: Marker
       Namespaces:
         {}
@@ -418,9 +419,9 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /shelfino1/median
-      Value: true
+      Value: false
     - Class: rviz_default_plugins/Marker
-      Enabled: true
+      Enabled: false
       Name: Marker
       Namespaces:
         {}
@@ -431,7 +432,7 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /shelfino1/centroid
-      Value: true
+      Value: false
     - Class: rviz_default_plugins/TF
       Enabled: false
       Frame Timeout: 15
@@ -450,7 +451,7 @@ Visualization Manager:
       Enabled: true
       Name: Marker
       Namespaces:
-        {}
+        circle: true
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -489,7 +490,7 @@ Visualization Manager:
       Enabled: true
       Name: MarkerArray
       Namespaces:
-        {}
+        server_communicated_poses: true
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -553,6 +554,53 @@ Visualization Manager:
         Reliability Policy: Reliable
         Value: /shelfino1/plan
       Value: true
+    - Class: rviz_default_plugins/Marker
+      Enabled: true
+      Name: Marker
+      Namespaces:
+        "": true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /mesh_server/points_to_explore_markers
+      Value: true
+    - Alpha: 1
+      Autocompute Intensity Bounds: true
+      Autocompute Value Bounds:
+        Max Value: 10
+        Min Value: -10
+        Value: true
+      Axis: Z
+      Channel Name: intensity
+      Class: rviz_default_plugins/PointCloud2
+      Color: 255; 255; 255
+      Color Transformer: RGB8
+      Decay Time: 0
+      Enabled: true
+      Invert Rainbow: false
+      Max Color: 255; 255; 255
+      Max Intensity: 4096
+      Min Color: 0; 0; 0
+      Min Intensity: 0
+      Name: PointCloud2
+      Position Transformer: XYZ
+      Selectable: true
+      Size (Pixels): 3
+      Size (m): 0.009999999776482582
+      Style: Flat Squares
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /mesh_server/raw_cloud
+      Use Fixed Frame: true
+      Use rainbow: true
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
@@ -600,25 +648,25 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 73.71040344238281
+      Distance: 9.235270500183105
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: -6.036836624145508
-        Y: 4.2703046798706055
-        Z: 0.2367885261774063
+        X: -8.245833396911621
+        Y: -10.834723472595215
+        Z: 2.985487222671509
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.5240923166275024
+      Pitch: 0.5540924072265625
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 4.140329837799072
+      Yaw: 0.9489663243293762
     Saved: ~
 Window Geometry:
   Displays:

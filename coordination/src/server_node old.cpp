@@ -23,7 +23,7 @@ public:
     std::string robot_pcl_topic_ = this->declare_parameter<std::string>("pcl_topic_in", "cluster_pcl");
     robot_ids_ = this->declare_parameter<std::vector<std::string>>("robot_ids", std::vector<std::string>{"shelfino1", "pollo"});
     voxel_leaf_size_ = this->declare_parameter<float>("voxel_size", 0.05);
-    threshold_count_per_voxel_ = this->declare_parameter<int>("threshold_count_per_voxel", 30);
+    maximum_count_per_voxel_ = this->declare_parameter<int>("threshold_count_per_voxel", 30);
     minimum_percentage_ = this->declare_parameter<float>("minimum_percentage", 0.1);
     radius_multiplier_ = this->declare_parameter<float>("radius_multiplier", 2.);
 
@@ -63,7 +63,7 @@ public:
     circle_pub_ = create_publisher<visualization_msgs::msg::Marker>("circle_pub", 200);
     pose_pub_ = create_publisher<visualization_msgs::msg::MarkerArray>("poses", 200);
     // Variables definition-------------
-    pcl_manager_ = new CloudToVoxel(voxel_leaf_size_, threshold_count_per_voxel_, minimum_percentage_);
+    pcl_manager_ = new CloudToVoxel(voxel_leaf_size_, maximum_count_per_voxel_, minimum_percentage_);
 
     violet.a = 1.0f;
     violet.r = .5f;
@@ -100,7 +100,7 @@ private:
   // PCL managment
   float minimum_percentage_;
   float voxel_leaf_size_, hz_;
-  int threshold_count_per_voxel_;
+  int maximum_count_per_voxel_;
   CloudToVoxel *pcl_manager_;
   rclcpp::TimerBase::SharedPtr timer_;
   // Robot managment---------------------------

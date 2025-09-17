@@ -41,10 +41,13 @@ public:
         std::string topic_f_cluster_out = this->declare_parameter<std::string>("cluster_pose_topic", "f_cluster_out");
         std::string topic_pcl_in = this->declare_parameter<std::string>("topics.cluster_pcl", "f_cluster_out");
         auto pcl_to_server = this->declare_parameter<std::string>("server.pcl_topic_in", "f_cluster_out");
-        auto server_positions = "/mesh_server/"+this->declare_parameter<std::string>("topics.positions_to_explore_topic_vis", "positions_to_explore_vis");
-        sensor_node_ = this->declare_parameter<std::string>("robot_sensors.vision_manager", "vision_node");
+        auto server_positions = "/mesh_server/" + this->declare_parameter<std::string>("topics.poses_to_be_in", "poses");
+        sensor_node_ = this->declare_parameter<std::string>("robot_logic.vision_manager", "vision_node");
+        hz_ = this->declare_parameter<float>("robot_logic.vision_activation_check_hz", 1.0);
+        activation_distance_ = this->declare_parameter<float>("robot_logic.vision_activation_distance", 5.0);
+
         frame_id_ = this->declare_parameter<std::string>("world_frame", "map");
-        initial_goals_ = this->declare_parameter<std::vector<double>>("initial_goals." + robot_id_, {.0, .0, .0});
+        initial_goals_ = this->declare_parameter<std::vector<double>>("checkpoints." + robot_id_, {.0, .0, .0});
 
         auto robot_ids = this->declare_parameter<std::vector<std::string>>("init_names", std::vector<std::string>{"shelfino1", "pollo"});
 
@@ -93,10 +96,11 @@ public:
         pcl_publisher_ = create_publisher<sensor_msgs::msg::PointCloud2>(pcl_to_server, 200);
 
         server_position_subsciber_ = this->create_subscription<visualization_msgs::msg::MarkerArray>(server_positions, 1, std::bind(&RobotManager::server_callback, this, std::placeholders::_1));
+        distance_activation_period_ = std::chrono::milliseconds(static_cast<int>(std::floor((1 / hz_) * 1000)));
         rclcpp::on_shutdown([this]()
                             { this->onShutdown(); });
 
-        RCLCPP_INFO(this->get_logger(), "Given %d checkpoints to explore", explore_poses_.size());
+        RCLCPP_INFO(this->get_logger(), "Given %ld checkpoints to explore", explore_poses_.size());
         last_state_requested_ = lifecycle_msgs::msg::Transition::TRANSITION_DESTROY;
         change_state_sensor(lifecycle_msgs::msg::Transition::TRANSITION_CONFIGURE);
         change_state_sensor(lifecycle_msgs::msg::Transition::TRANSITION_ACTIVATE);
@@ -109,9 +113,13 @@ private:
     std::vector<double> initial_goals_;
 
     // Vision Handling
+    float hz_, activation_distance_;
+    std::chrono::milliseconds distance_activation_period_;
     rclcpp::Client<lifecycle_msgs::srv::ChangeState>::SharedPtr client_change_state_;
     rclcpp::Client<lifecycle_msgs::srv::GetState>::SharedPtr client_get_state_;
     rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr pcl_subscriber_;
+    rclcpp::TimerBase::SharedPtr activation_timer_;
+
     uint8_t last_state_requested_, last_transition_success_ = false;
 
     // Movement handling
@@ -124,11 +132,11 @@ private:
     // Server Communication
     rclcpp::Subscription<visualization_msgs::msg::MarkerArray>::SharedPtr server_position_subsciber_;
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pcl_publisher_;
-    geometry_msgs::msg::Pose pose_to_follow_;
+    geometry_msgs::msg::Pose goal_pose_;
 
     // Decision handling
     bool moving_ = false, exploring_ = true, received_position_ = false, pcl_called_ = false, following_commands_ = false, arrived_to_position_ = false,
-                              allow_pcl_input_ = true, interrupted_movement_ = false, disgard_movement_ = false;
+         allow_pcl_input_ = true, interrupted_movement_ = false, discard_movement_ = false, in_distance_for_vision_activation_ = false, consumed_goal_pose = false;
 
     tf2_ros::Buffer tf_buffer_;
     tf2_ros::TransformListener tf_listener_;
@@ -137,19 +145,40 @@ private:
     void plan_manager()
     {
         std::lock_guard<std::mutex> lock(plan_);
-        RCLCPP_INFO(this->get_logger(), "received update, status :\n moving_ %d, exploring_ %d, received_position_%d, pcl_called_%d, following_commands_%d, arrived_to_position_%d,allow_pcl_input_%d, interrupted_movement_%d,disgard_movement_%d",
-                    moving_, exploring_, received_position_, pcl_called_, following_commands_, arrived_to_position_, allow_pcl_input_, interrupted_movement_,disgard_movement_);
+        RCLCPP_INFO(this->get_logger(), "received update, status :\n moving_ %d, exploring_ %d, received_position_%d, pcl_called_%d, following_commands_%d, arrived_to_position_%d,allow_pcl_input_%d, interrupted_movement_%d,discard_movement_%d, in_distance_for_vision_activation_%d, consumed_goal_pose%d",
+                    moving_, exploring_, received_position_, pcl_called_, following_commands_, arrived_to_position_, allow_pcl_input_, interrupted_movement_, discard_movement_, in_distance_for_vision_activation_, consumed_goal_pose);
 
         stopMovement();
         // Used to iterrupt actions until at least a command from server is sent
-        if(received_position_)following_commands_ = true; 
+        if (received_position_)
+        {
+            consumed_goal_pose = false;
+            following_commands_ = true;
+        }
+
+        if (in_distance_for_vision_activation_)
+        {
+            RCLCPP_INFO(this->get_logger(), "In range for an early activation of the sensor");
+            in_distance_for_vision_activation_ = false;
+            activate_vision();
+            activation_timer_->cancel();
+            return;
+        }
         if (exploring_ && (received_position_ || pcl_called_))
         {
             // should be the only instance of deactivating exloring since true is the default value and
             // should be deactivated only when the object is discovered
+            deactivate_vision();
+            if (received_position_)
+            {
+                activation_timer_ = create_wall_timer(
+                    std::chrono::milliseconds(distance_activation_period_),
+                    [this]()
+                    { distance_based_vision_activation(); });
+            }
+
             RCLCPP_INFO(this->get_logger(), "Object Found");
             exploring_ = false;
-            deactivate_pcl();
         }
         if (exploring_)
         {
@@ -169,44 +198,68 @@ private:
         else if (!moving_ && following_commands_)
         {
 
-            if (received_position_)
-            {
-                goToPose(pose_to_follow_);
-            }
-            else if (arrived_to_position_)
+            if (arrived_to_position_)
             {
                 arrived_to_position_ = false;
                 allow_pcl_input_ = true;
                 change_state_sensor(lifecycle_msgs::msg::Transition::TRANSITION_ACTIVATE);
             }
+            else if (!consumed_goal_pose)
+            {
+                goToPose(goal_pose_);
+                consumed_goal_pose = true;
+            }
             else
             {
-                if (interrupted_movement_)
-                {
-                    // This state is reached only when the server sends a position, but the robot didn't reach the position.
-                    RCLCPP_ERROR(this->get_logger(), "Command sent before completing task");
-                }
+                RCLCPP_INFO(this->get_logger(), "I DON'T KNOW");
             }
+        }
+        if (in_distance_for_vision_activation_)
+        {
+            RCLCPP_INFO(this->get_logger(), "I'm less than %f away from object. Activating vision...", activation_distance_);
         }
         if (received_position_)
             received_position_ = false;
 
-        if (received_position_)
+        if (interrupted_movement_)
             interrupted_movement_ = false;
 
         if (pcl_called_)
         {
             pcl_called_ = false;
             // to allow only one pcl at a time
-            deactivate_pcl();
+            deactivate_vision();
         }
-        disgard_movement_ = false;
-
+        // discard_movement_ = false;
     }
-    void deactivate_pcl(){
-        if(allow_pcl_input_){
-        allow_pcl_input_ = false;
-        change_state_sensor(lifecycle_msgs::msg::Transition::TRANSITION_DEACTIVATE);
+    void distance_based_vision_activation()
+    {
+        auto robot_pose = get_robot_pose(tf_buffer_, frame_id_, robot_id_, this->get_clock()->now(), .5, 3);
+
+        double dist = std::sqrt(
+            std::pow(goal_pose_.position.x - robot_pose.position.x, 2) +
+            std::pow(goal_pose_.position.y - robot_pose.position.y, 2));
+        if (dist < activation_distance_)
+        {
+            in_distance_for_vision_activation_ = true;
+            plan_manager();
+        }
+    }
+    void deactivate_vision()
+    {
+        if (allow_pcl_input_)
+        {
+            allow_pcl_input_ = false;
+            change_state_sensor(lifecycle_msgs::msg::Transition::TRANSITION_DEACTIVATE);
+        }
+    }
+
+    void activate_vision()
+    {
+        if (!allow_pcl_input_)
+        {
+            allow_pcl_input_ = true;
+            change_state_sensor(lifecycle_msgs::msg::Transition::TRANSITION_ACTIVATE);
         }
     }
 
@@ -234,7 +287,7 @@ private:
                 nearest_pose = marker.pose;
             }
         }
-        pose_to_follow_ = nearest_pose;
+        goal_pose_ = nearest_pose;
         received_position_ = true;
         plan_manager();
     }
@@ -309,13 +362,18 @@ private:
     void
     stopMovement()
     {
-        disgard_movement_ = true;
+        discard_movement_ = true;
         if (follow_goal_handle_)
         {
             RCLCPP_INFO(this->get_logger(), "Cancelling current goal...");
-            follow_client_->async_cancel_goal(follow_goal_handle_);
-            follow_goal_handle_.reset();
-            moving_ = false;
+            try
+            {
+                follow_client_->async_cancel_goal(follow_goal_handle_);
+            }
+            catch (const rclcpp_action::exceptions::UnknownGoalHandleError &e)
+            {
+                RCLCPP_ERROR(this->get_logger(), "Exception while getting goal handle: %s", e.what());
+            }
         }
         else
         {
@@ -325,7 +383,7 @@ private:
 
     void goToPose(geometry_msgs::msg::Pose goal_pose)
     {
-        disgard_movement_ = false;
+        discard_movement_ = false;
         if (!wait_for_servers())
         {
             RCLCPP_ERROR(this->get_logger(), "One or more action servers not available!");
@@ -342,7 +400,8 @@ private:
         {
             if (result.code == rclcpp_action::ResultCode::SUCCEEDED)
             {
-                if(disgard_movement_){
+                if (discard_movement_)
+                {
                     // Can happen that the pcl is found in the interval between stopping and computing a new plan
                     RCLCPP_INFO(this->get_logger(), "Path computed, but disgarded");
                 }

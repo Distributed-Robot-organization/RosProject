@@ -53,18 +53,19 @@
     map: "big_map" # Maps can be "test_world" or "plane_2"
     init_names: ["shelfino1","pollo"] # Names of the robots to be spawned
     init_rand: [false, false] # If true, the robots will be spawned in random positions
-    init_x: [-12.6,-6.0] # X position of the robots
-    init_y: [-20.0,27.0] # Y position of the robots
-    init_yaw: [0.65,-.47] # Yaw of the robots
+    init_x: [-6.515889,-16.018056] # X position of the robots
+    init_y: [-21.358118,-10.088077] # Y position of the robots
+    init_yaw: [0.434410,-1.603014] # Yaw of the robots
 
     server:
       voxel_size: 0.05 #meters
       hz: 1 #update rate of the cluster
-      maximum_count_per_voxel: 250 #number of point per voxel
       minimum_percentage: 0.1 # ... of the maximum detected to be considered when we are finding the voxels to analyze again
       voxel_estimate: "voxel_estimate_out"
-      threshold_count_per_voxel: 30
+      maximum_count_per_voxel: 2
       pcl_topic_in: "cluster_pcl"
+      minimum_distance: 2.0
+      radius_multiplier: 2.0 #TODO: confrontarci
 
     qos_overrides:
       /parameter_events:
@@ -74,7 +75,7 @@
           history: keep_last
           reliability: reliable
 
-    initial_goals:
+    checkpoints:
       pollo: [-5.4,18.0,-1.53, 10.0,21.0,1.69]
       shelfino1: [3.8,-11.7,-1.7, -12.1,-16.86,1.69, -24.0,0.5,1.68, 1.0,1.34,-1.57]
 
@@ -83,17 +84,19 @@
       raw_pcl: "f_camera/points"
       cluster_pose: "c_position"
       cluster_pcl: "cluster_pcl"
-      positions_to_explore_topic_vis: "poses"
+      poses_to_be_in: "poses"
       cluster_centroid: "median" # "median" and "centroid"  are usable values
     
-    robot_sensors:
+    robot_logic:
       vision_manager: "lifecycled_pcl"
+      vision_activation_distance: 5.0
+      vision_activation_check_hz: 0.5
 
     pcl_filter_params:
       cluster_tolerance: .05
       plane_distance_treshold: 0.06
       noise_mean: .0
-      noise_dev: .01
+      noise_dev: .03
 
     shelfino_additions:
       max_camera_depth: 8.0

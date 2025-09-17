@@ -13,6 +13,7 @@
 #include <pcl/segmentation/extract_clusters.h>
 #include <pcl/common/centroid.h>
 #include "coordination/server_types.hpp"
+#include <pcl/segmentation/region_growing.h>
 
 
 
@@ -37,7 +38,7 @@ private:
     bool do_estimate_ = false,densitySatisfied_ = false;
     // long unsigned int running_maximum_count_ = 0;
 
-    int threshold_count_per_voxel_, minimum_count_;
+    int maximum_count_per_voxel_, minimum_count_;
     std::map<std::string, std::map<std::string, float>> voxel_parameters_;
 
     void voxelDensityEstimate();

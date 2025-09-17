@@ -200,7 +200,7 @@ private:
 
     void cloud_callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr recent_cloud)
     {
-        if(kill_callback)return;
+        if(kill_callback)return; // this check should not be necessary, but sometimes the deactivation fails
         //-------------------------------Filtering far away points
         // Use for timing callback execution time
         auto start = std::chrono::high_resolution_clock::now();

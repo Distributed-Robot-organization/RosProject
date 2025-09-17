@@ -2,7 +2,6 @@
 #include "coordination/publishers.hpp"
 #include "coordination/robot_manager.hpp"
 
-
 #include <memory>
 #include <string>
 #include <thread>
@@ -20,13 +19,15 @@ public:
 
     // Parameter definitions---------------
     std::string voxel_topic_out = this->declare_parameter<std::string>("topics.voxel_topic_out", "voxel_estimate_out");
-    std::string positions_to_explore_vis = this->declare_parameter<std::string>("topics.positions_to_explore_topic_vis", "positions_to_explore_vis");
+    std::string positions_to_explore_vis = this->declare_parameter<std::string>("topics.poses_to_be_in", "positions_to_explore_vis");
     std::string robot_pcl_topic_ = this->declare_parameter<std::string>("server.pcl_topic_in", "cluster_pcl");
     robot_ids_ = this->declare_parameter<std::vector<std::string>>("init_names", std::vector<std::string>{"shelfino1", "pollo"});
     voxel_leaf_size_ = this->declare_parameter<float>("server.voxel_size", 0.05);
-    threshold_count_per_voxel_ = this->declare_parameter<int>("server.threshold_count_per_voxel", 30);
+    maximum_count_per_voxel_ = this->declare_parameter<int>("server.maximum_count_per_voxel", 30);
     minimum_percentage_ = this->declare_parameter<float>("server.minimum_percentage", 0.1);
     radius_multiplier_ = this->declare_parameter<float>("server.radius_multiplier", 2.);
+    minimum_distance_ = this->declare_parameter<float>("server.minimum_distance", 2.);
+    std::string raw_cloud_out = this->declare_parameter<std::string>("server.raw_cloud_out", "raw_cloud");
     world_frame_ = this->declare_parameter<std::string>("world_frame", "map");
 
     hz_ = this->declare_parameter<int>("server.hz", 3);
@@ -50,6 +51,7 @@ public:
             pcl_msg_buffer_.push(ItemMsg{std::move(msg), robot});
           }));
       robots_pcl_counter_.emplace(robot, 0);
+      robot_that_sent_pcl_.emplace(robot, false);
     }
 
     // --- main-loop timer -------------
@@ -60,12 +62,14 @@ public:
 
     // Publishers-----------------------
     voxel_publisher_ = create_publisher<sensor_msgs::msg::PointCloud2>(voxel_topic_out, 200);
+    raw_cloud_publisher_ = create_publisher<sensor_msgs::msg::PointCloud2>(raw_cloud_out, 200);
+
     under_explored_publisher_ = create_publisher<visualization_msgs::msg::Marker>("points_to_explore_markers", 200);
     points_generic_ = create_publisher<visualization_msgs::msg::Marker>("Generic", 200);
     circle_pub_ = create_publisher<visualization_msgs::msg::Marker>("circle_pub", 200);
     pose_pub_ = create_publisher<visualization_msgs::msg::MarkerArray>(positions_to_explore_vis, 200);
     // Variables definition-------------
-    pcl_manager_ = new CloudToVoxel(voxel_leaf_size_, threshold_count_per_voxel_, minimum_percentage_);
+    pcl_manager_ = new CloudToVoxel(voxel_leaf_size_, maximum_count_per_voxel_, minimum_percentage_);
 
     violet.a = 1.0f;
     violet.r = .5f;
@@ -98,13 +102,14 @@ public:
     white.b = 1.0f;
     // Starting check-----
     startupRosCheck();
+    RCLCPP_INFO(this->get_logger(), "READY");
   }
 
 private:
   // PCL managment
   float minimum_percentage_;
   float voxel_leaf_size_, hz_;
-  int threshold_count_per_voxel_;
+  int maximum_count_per_voxel_;
   CloudToVoxel *pcl_manager_;
   rclcpp::TimerBase::SharedPtr timer_;
   rclcpp::Time time_stamp_;
@@ -122,10 +127,11 @@ private:
 
   std::vector<std::string> robot_ids_;
   std::map<std::string, int> robots_pcl_counter_;
+  std::map<std::string, bool> robot_that_sent_pcl_;
 
   Polygon search_perimeter_;
   point_t center_of_the_perimeter_;
-  double radius_, radius_multiplier_;
+  double radius_, radius_multiplier_, minimum_distance_;
   // Decision flags------------------------
   bool object_found_ = false,
        fleet_is_warned_ = false,
@@ -135,6 +141,7 @@ private:
        satisfied_ = false;
   // Visualization Publishers------------------
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr voxel_publisher_;
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr raw_cloud_publisher_;
   rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr under_explored_publisher_;
   rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr points_generic_;
   rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr circle_pub_;
@@ -173,6 +180,7 @@ private:
       pcl::fromROSMsg(*item.msg, received_cloud);
 
       robots_pcl_counter_[robot_sender] = robots_pcl_counter_[robot_sender] + 1;
+      robot_that_sent_pcl_[robot_sender] = true;
       // don't start to estimate until all robot have published at least one pcl
 
       pcl_manager_->expandPCL(received_cloud);
@@ -233,17 +241,42 @@ private:
         else
         {
           // Now we only need to scan the most uncertain parts of the object
-          // TODO: add a waiting list to be sure of sending requests only when all robots completed their scan
-          pcl_manager_->voxelDensityEstimate();
-          if (!pcl_manager_->isEstimateSatified())
+          if (all_robot_sent_pcl())
           {
-            sendUnderExplored();
+            pcl_manager_->voxelDensityEstimate();
+
+            if (!pcl_manager_->isEstimateSatified())
+            {
+              sendUnderExplored();
+              reset_robot_sent_pcl();
+            }
           }
         }
       }
     }
+    publishPCL(raw_cloud_publisher_, pcl_manager_->raw_cloud_, time_stamp_);
   };
 
+  void reset_robot_sent_pcl()
+  {
+    for (auto robot_id : robot_ids_)
+    {
+      robot_that_sent_pcl_[robot_id] = false;
+    }
+  }
+
+  bool all_robot_sent_pcl()
+  {
+    bool yes = true;
+    for (auto robot_id : robot_ids_)
+    {
+      if (!robot_that_sent_pcl_[robot_id])
+      {
+        yes = false;
+      }
+    }
+    return yes;
+  }
   void sendUnderExplored()
   {
     // TODO: Refine the UnderExplored to set a k-NN and define as many clusters as robot_ids
@@ -267,7 +300,7 @@ private:
   {
     point_t p_max, p_min, centroid;
     pcl_manager_->getBBoxParameters(p_max, p_min, centroid);
-    radius_ = sqrt(pow(p_max.x - centroid.x, 2) + pow(p_max.y - centroid.y, 2)) * radius_multiplier_;
+    radius_ = (sqrt(pow(p_max.x - centroid.x, 2) + pow(p_max.y - centroid.y, 2)) * radius_multiplier_) + minimum_distance_;
     search_perimeter_ = circle_polygon(centroid.x, centroid.y, radius_, 64);
     auto robot_pose = get_robot_pose(tf_buffer_, world_frame_, first_discoverer_, this->get_clock()->now());
     const double vx = centroid.x - robot_pose.position.x;
@@ -300,13 +333,14 @@ private:
     point_t p_min = pcl_manager_->p_min_;
     radius_ = sqrt(pow(p_max.x - center_of_the_perimeter_.x, 2) + pow(p_max.y - center_of_the_perimeter_.y, 2)) * radius_multiplier_;
     search_perimeter_ = circle_polygon(center_of_the_perimeter_.x, center_of_the_perimeter_.y, radius_, 64);
+    publishPoligon(circle_pub_, search_perimeter_, time_stamp_, violet);
   }
 
   void startupRosCheck()
   {
-    // Some times the node will not connect correctly so these are basic checks to the transform tree
+    // Some times the node will not connect correctly to the enviroment so these are basic checks to the transform tree
     rclcpp::sleep_for(2s);
-  
+
     for (auto id : robot_ids_)
     {
       std::string robot_frame = id + "/base_link";

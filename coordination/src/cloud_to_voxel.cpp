@@ -3,7 +3,7 @@
 CloudToVoxel::CloudToVoxel(float voxel_leaf_size, int maximum_count_per_voxel, float minimum_percentage)
 {
     voxel_leaf_size_ = voxel_leaf_size;
-    threshold_count_per_voxel_ = maximum_count_per_voxel;
+    maximum_count_per_voxel_ = maximum_count_per_voxel;
     raw_cloud_ = pcl::PointCloud<point_t>::Ptr(new pcl::PointCloud<point_t>());
     octree_ = pcl::octree::OctreePointCloudSearch<point_t>::Ptr(new pcl::octree::OctreePointCloudSearch<point_t>(voxel_leaf_size_));
     voxel_cloud_ = pcl::PointCloud<point_t>::Ptr(new pcl::PointCloud<point_t>());
@@ -13,9 +13,9 @@ CloudToVoxel::CloudToVoxel(float voxel_leaf_size, int maximum_count_per_voxel, f
 void CloudToVoxel::generateVoxels()
 {
     pcl::getMinMax3D(*this->raw_cloud_, p_min_, p_max_);
-    centroid_.x =(p_max_.x + p_min_.x)/2;
-    centroid_.y =(p_max_.y + p_min_.y)/2;
-    centroid_.z =(p_max_.z + p_min_.z)/2;
+    centroid_.x = (p_max_.x + p_min_.x) / 2;
+    centroid_.y = (p_max_.y + p_min_.y) / 2;
+    centroid_.z = (p_max_.z + p_min_.z) / 2;
 
     // generating centroid of the voxels a bit outside of the cluster to have a bit of margin
     // starting point of the voxels
@@ -33,12 +33,12 @@ void CloudToVoxel::generateVoxels()
     int it_y = std::ceil<int>((e_y - s_y) / voxel_leaf_size_);
     int it_z = std::ceil<int>((e_z - s_z) / voxel_leaf_size_);
 
-    std::cout << s_x << " " << s_y << " " << s_z << std::endl;
-    std::cout << e_x << " " << e_y << " " << e_z << std::endl;
-    std::cout << e_x - s_x << " " << e_y - s_y << " " << e_z - s_z << std::endl;
+    // std::cout << s_x << " " << s_y << " " << s_z << std::endl;
+    // std::cout << e_x << " " << e_y << " " << e_z << std::endl;
+    // std::cout << e_x - s_x << " " << e_y - s_y << " " << e_z - s_z << std::endl;
 
-    std::cout << p_min_ << " " << p_max_ << std::endl;
-    std::cout << it_x << " " << it_y << " " << it_z << std::endl;
+    // std::cout << p_min_ << " " << p_max_ << std::endl;
+    // std::cout << it_x << " " << it_y << " " << it_z << std::endl;
     // populating
     for (int i = 0; i < it_x; i++)
     {
@@ -101,8 +101,8 @@ void CloudToVoxel::voxelDensityEstimate()
         }
     }
     // Get lower limit of the voxels to consider
-    long unsigned int minimum_count =0;
-    minimum_count = floor(minimum_percentage_*running_maximum_count);
+    long unsigned int minimum_count = 0;
+    minimum_count = floor(minimum_percentage_ * running_maximum_count);
     for (auto keyval : count_per_voxel_)
     {
         // normalized_count_per_voxel_.emplace(keyval.first, float(keyval.second) / float(running_maximum_count));
@@ -110,18 +110,19 @@ void CloudToVoxel::voxelDensityEstimate()
         p.x = std::get<0>(keyval.first);
         p.y = std::get<1>(keyval.first);
         p.z = std::get<2>(keyval.first);
-        if (keyval.second>=minimum_count)
+        if (keyval.second >= minimum_count)
         {
-            p.probability = ((float(keyval.second-minimum_count))/ (float(running_maximum_count-minimum_count)))+minimum_percentage_;
+            p.probability = ((float(keyval.second - minimum_count)) / (float(running_maximum_count - minimum_count))) + minimum_percentage_;
         }
-        else {
-            p.probability =0.0;
+        else
+        {
+            p.probability = 0.0;
         }
-        //std::cout <<"["<< p.probability<<"f "<<keyval.second<< "]";
+        // std::cout <<"["<< p.probability<<"f "<<keyval.second<< "]";
         probability_pcl_->push_back(p);
     }
 
-    std::cout << "Minimum # of points considered  " <<minimum_count << " Maximum # of points counted" << running_maximum_count<< std::endl;
+    std::cout << "Minimum # of points considered  " << minimum_count << " Maximum # of points counted" << running_maximum_count << std::endl;
 }
 
 void CloudToVoxel::expandPCL(pcl::PointCloud<point_t> new_cloud)
@@ -146,66 +147,175 @@ pcl::PointCloud<point_t>::Ptr CloudToVoxel::getVoxelCloud()
     return copy;
 }
 
+using namespace Eigen;
+
+int findNearestCluster(const Vector3f &point, const std::vector<Vector3f> &centroids)
+{
+    float min_dist = std::numeric_limits<float>::max();
+    int best_index = -1;
+    for (int i = 0; i < centroids.size(); ++i)
+    {
+        float dist = (point - centroids[i]).squaredNorm();
+        if (dist < min_dist)
+        {
+            min_dist = dist;
+            best_index = i;
+        }
+    }
+    return best_index;
+}
+
+void kMeansClustering(const std::vector<Vector3f> &points, int K,
+                      std::vector<int> &labels, std::vector<Vector3f> &centroids,
+                      int max_iterations = 100)
+{
+    int N = points.size();
+    labels.resize(N);
+
+    // Initialize centroids randomly
+    centroids.clear();
+    for (int i = 0; i < K; ++i)
+        centroids.push_back(points[rand() % N]);
+
+    for (int iter = 0; iter < max_iterations; ++iter)
+    {
+        // Assignment step
+        for (int i = 0; i < N; ++i)
+        {
+            labels[i] = findNearestCluster(points[i], centroids);
+        }
+
+        // Update step
+        std::vector<Vector3f> new_centroids(K, Vector3f::Zero());
+        std::vector<int> counts(K, 0);
+
+        for (int i = 0; i < N; ++i)
+        {
+            new_centroids[labels[i]] += points[i];
+            counts[labels[i]] += 1;
+        }
+
+        for (int i = 0; i < K; ++i)
+        {
+            if (counts[i] > 0)
+                centroids[i] = new_centroids[i] / counts[i];
+        }
+    }
+}
 
 std::vector<point_t> CloudToVoxel::getUnderExploredVoxels()
 {
 
+    std::vector<Vector3f> points;
+
     pcl::PointCloud<point_t>::Ptr filtered_voxel_pcl = pcl::PointCloud<point_t>::Ptr(new pcl::PointCloud<point_t>());
     for (auto p : *probability_pcl_)
     {
-        if (p.probability >= minimum_count_)
+        point_2_count_map_t::const_iterator pos = count_per_voxel_.find({p.x, p.y, p.z});
+        if (pos == count_per_voxel_.end())
         {
-            point_t p_out;
-            p_out.x = p.x;
-            p_out.y = p.y;
-            p_out.z = p.z;
-            filtered_voxel_pcl->push_back(p_out);
+            throw std::runtime_error("THIS SHOULD BE IMPOSSIBLE since all the points should be present");
+        }
+        else
+        {
+            int value = pos->second;
+
+            if (value>= minimum_count_ && value<=maximum_count_per_voxel_) 
+            {
+                point_t p_out;
+                p_out.x = p.x;
+                p_out.y = p.y;
+                p_out.z = p.z;
+                filtered_voxel_pcl->push_back(p_out);
+                points.push_back({p.x, p.y, p.z});
+            }
         }
     }
-    // Creating the KdTree object for the search method of the extraction
-    pcl::search::KdTree<point_t>::Ptr tree(new pcl::search::KdTree<point_t>);
-    pcl::EuclideanClusterExtraction<point_t> ec;
-    std::vector<pcl::PointIndices> clusters_indices;
-    // There are no point remaining in the point cloud to clusterize
 
-    tree->setInputCloud(filtered_voxel_pcl);
+    int K = 2;
+    std::vector<int> labels;
+    std::vector<Vector3f> centroids;
 
-    ec.setClusterTolerance(voxel_leaf_size_ * 2); // maximum search distance
-    // ec.setMinClusterSize(min_cluster_size);
-    // ec.setMaxClusterSize(max_cluster_size);
-    ec.setSearchMethod(tree);
-    ec.setInputCloud(filtered_voxel_pcl);
-    ec.extract(clusters_indices);
+    srand(time(0));
+    kMeansClustering(points, K, labels, centroids);
+
+    //     // Estimate normals
+    // pcl::NormalEstimation<pcl::PointXYZ, pcl::Normal> normal_estimator;
+    // pcl::search::Search<pcl::PointXYZ>::Ptr tree(new pcl::search::KdTree<pcl::PointXYZ>);
+    // pcl::PointCloud<pcl::Normal>::Ptr normals(new pcl::PointCloud<pcl::Normal>);
+
+    // normal_estimator.setSearchMethod(tree);
+    // normal_estimator.setInputCloud(filtered_voxel_pcl);
+    // normal_estimator.setKSearch(30);
+    // normal_estimator.compute(*normals);
+
+    // // Region growing segmentation
+    // pcl::RegionGrowing<pcl::PointXYZ, pcl::Normal> reg;
+    // reg.setMinClusterSize(50);
+    // reg.setMaxClusterSize(10000);
+    // reg.setSearchMethod(tree);
+    // reg.setNumberOfNeighbours(30);
+    // reg.setInputCloud(filtered_voxel_pcl);
+    // reg.setInputNormals(normals);
+    // reg.setSmoothnessThreshold(3.0 / 180.0 * M_PI); // 3 degrees
+    // reg.setCurvatureThreshold(1.0);
+
+    // std::vector<pcl::PointIndices> clusters;
+    // reg.extract(clusters);
+
+    // std::cout << "Number of clusters found: " << clusters.size() << std::endl;
+
+    // // Creating the KdTree object for the search method of the extraction
+    // pcl::search::KdTree<point_t>::Ptr tree(new pcl::search::KdTree<point_t>);
+    // pcl::EuclideanClusterExtraction<point_t> ec;
+    // std::vector<pcl::PointIndices> clusters_indices;
+    // // There are no point remaining in the point cloud to clusterize
+
+    // tree->setInputCloud(filtered_voxel_pcl);
+
+    // ec.setClusterTolerance(voxel_leaf_size_ * 2); // maximum search distance
+    // // ec.setMinClusterSize(min_cluster_size);
+    // // ec.setMaxClusterSize(max_cluster_size);
+    // ec.setSearchMethod(tree);
+    // ec.setInputCloud(filtered_voxel_pcl);
+    // ec.extract(clusters_indices);
     std::vector<point_t> out_vector;
-    for (auto cluster_idxs : clusters_indices)
-    {
-        Eigen::Vector4f centroid;
-        pcl::compute3DCentroid(*filtered_voxel_pcl, cluster_idxs, centroid);
-        point_t p(centroid[0], centroid[1], centroid[2]);
 
+    for (auto point : centroids)
+    {
+        point_t p(point[0], point[1], point[2]);
         out_vector.push_back(p);
     }
+
+    // for (auto cluster_idxs : clusters)
+    // {
+    //     Eigen::Vector4f centroid;
+    //     pcl::compute3DCentroid(*filtered_voxel_pcl, cluster_idxs, centroid);
+    //     point_t p(centroid[0], centroid[1], centroid[2]);
+
+    //     out_vector.push_back(p);
+    // }
     return out_vector;
 }
 
-void CloudToVoxel::getBBoxParameters(point_t &min_pt, point_t &max_pt, point_t &centroid){
+void CloudToVoxel::getBBoxParameters(point_t &min_pt, point_t &max_pt, point_t &centroid)
+{
     pcl::getMinMax3D(*this->raw_cloud_, min_pt, max_pt);
-    centroid.x =(max_pt.x + min_pt.x)/2;
-    centroid.y =(max_pt.y + min_pt.y)/2;
-    centroid.z =(max_pt.z + min_pt.z)/2;
+    centroid.x = (max_pt.x + min_pt.x) / 2;
+    centroid.y = (max_pt.y + min_pt.y) / 2;
+    centroid.z = (max_pt.z + min_pt.z) / 2;
 }
 
-bool CloudToVoxel::isEstimateSatified(){
+bool CloudToVoxel::isEstimateSatified() // TODO put a way to visualize the voxels that satisfy the count
+{
 
     bool satisfied = true;
-        for (auto keyval : count_per_voxel_)
+    for (auto keyval : count_per_voxel_)
     {
-        if (keyval.second<100){
+        if (keyval.second < maximum_count_per_voxel_)
+        {
             satisfied = false;
         }
     }
     return satisfied;
-
-
 }
-

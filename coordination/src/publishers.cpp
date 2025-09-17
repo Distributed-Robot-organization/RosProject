@@ -1,7 +1,5 @@
 #include "coordination/publishers.hpp"
 
-
-
 void publishPointMarkers(const rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr pub,
                          const std::vector<point_t> points,
                          builtin_interfaces::msg::Time stamp,
@@ -136,7 +134,8 @@ void publishPoseMarkers(const rclcpp::Publisher<visualization_msgs::msg::MarkerA
                         const std::vector<geometry_msgs::msg::Pose> robot_poses,
                         builtin_interfaces::msg::Time stamp,
                         std_msgs::msg::ColorRGBA color,
-                        std::string ns){
+                        std::string ns)
+{
   visualization_msgs::msg::MarkerArray marker_array;
   int id = 0;
 
@@ -154,7 +153,7 @@ void publishPoseMarkers(const rclcpp::Publisher<visualization_msgs::msg::MarkerA
     marker.pose = pose;
 
     // Arrow dimensions
-    marker.scale.x = .3; // shaft length
+    marker.scale.x = .3;  // shaft length
     marker.scale.y = 0.1; // shaft diameter
     marker.scale.z = 0.1; // head diameter
 
@@ -166,4 +165,40 @@ void publishPoseMarkers(const rclcpp::Publisher<visualization_msgs::msg::MarkerA
   }
 
   pub->publish(marker_array);
+}
+
+void publishPCL(const rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub,
+                const pcl::PointCloud<point_t>::Ptr normalized_pcl,
+                builtin_interfaces::msg::Time stamp)
+{
+
+  // normalized vector between 0 and 1
+  pcl::PointCloud<pcl::PointXYZRGBA>::Ptr norm_vox_cloud(new pcl::PointCloud<pcl::PointXYZRGBA>((*normalized_pcl).width, (*normalized_pcl).height));
+  for (auto p : *normalized_pcl)
+  {
+    try
+    {
+      pcl::PointXYZRGBA p_out;
+      p_out.x = p.x;
+      p_out.y = p.y;
+      p_out.z = p.z;
+      p_out.g = uint8_t(255);
+      p_out.b = uint8_t(255);
+      p_out.r = uint8_t(255);
+      p_out.a = static_cast<uint8_t>(125);
+      norm_vox_cloud->push_back(p_out);
+    }
+    catch (std::out_of_range &ex)
+    {
+      std::ostringstream oss;
+      oss << "std::out_of_range for reading point " << p.x << " " << p.y << " " << p.z << "Description: " << ex.what();
+      throw std::runtime_error(oss.str());
+    }
+  }
+
+  sensor_msgs::msg::PointCloud2::SharedPtr ros_msg(new sensor_msgs::msg::PointCloud2);
+  pcl::toROSMsg(*norm_vox_cloud, *ros_msg);
+  ros_msg->header.frame_id = "map";
+  ros_msg->header.stamp = stamp;
+  pub->publish(*ros_msg);
 }
