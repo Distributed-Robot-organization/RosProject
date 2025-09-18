@@ -310,11 +310,21 @@ bool CloudToVoxel::isEstimateSatified() // TODO put a way to visualize the voxel
 {
 
     bool satisfied = true;
+    satisfied_voxels_.reset();
+    satisfied_voxels_ = pcl::PointCloud<point_t>::Ptr(new pcl::PointCloud<point_t>());
+
     for (auto keyval : count_per_voxel_)
     {
         if (keyval.second < maximum_count_per_voxel_)
         {
             satisfied = false;
+        }
+        else{
+            point_t p;
+            p.x = std::get<0>(keyval.first);
+            p.y = std::get<1>(keyval.first);
+            p.z = std::get<2>(keyval.first);
+            satisfied_voxels_->push_back(p);
         }
     }
     return satisfied;

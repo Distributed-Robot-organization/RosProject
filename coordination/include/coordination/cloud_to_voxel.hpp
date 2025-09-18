@@ -31,8 +31,7 @@ private:
     pcl::octree::OctreePointCloudSearch<point_t>::Ptr octree_;
     point_2_count_map_t count_per_voxel_;
     point_2_norm_cloud_map_t normalized_count_per_voxel_;
-    pcl::PointCloud<point_t>::Ptr raw_cloud_;
-    pcl::PointCloud<point_t>::Ptr voxel_cloud_;
+    pcl::PointCloud<point_t>::Ptr raw_cloud_, voxel_cloud_, satisfied_voxels_;
     pcl::PointCloud<PointXYZProb>::Ptr probability_pcl_;
     point_t p_min_, p_max_, centroid_;
     bool do_estimate_ = false,densitySatisfied_ = false;
@@ -58,4 +57,4 @@ public:
 
     friend class MeshServerNode;
 };
-#endif // SERVER_TYPES_H
+#endif 

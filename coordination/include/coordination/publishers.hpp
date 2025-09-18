@@ -32,7 +32,7 @@ void publishVoxelEstimate(const rclcpp::Publisher<sensor_msgs::msg::PointCloud2>
 void publishPoligon(const rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr pub,
      Polygon poly, builtin_interfaces::msg::Time stamp, std_msgs::msg::ColorRGBA color);
      
-void publishPCL(const rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub,
+void publishMonocromePCL(const rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub,
                           const pcl::PointCloud<point_t>::Ptr normalized_pcl,
-                          builtin_interfaces::msg::Time stamp);
+                          builtin_interfaces::msg::Time stamp,std_msgs::msg::ColorRGBA color);
 #endif

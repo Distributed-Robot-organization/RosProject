@@ -167,9 +167,9 @@ void publishPoseMarkers(const rclcpp::Publisher<visualization_msgs::msg::MarkerA
   pub->publish(marker_array);
 }
 
-void publishPCL(const rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub,
+void publishMonocromePCL(const rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub,
                 const pcl::PointCloud<point_t>::Ptr normalized_pcl,
-                builtin_interfaces::msg::Time stamp)
+                builtin_interfaces::msg::Time stamp, std_msgs::msg::ColorRGBA color)
 {
 
   // normalized vector between 0 and 1
@@ -182,10 +182,10 @@ void publishPCL(const rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPt
       p_out.x = p.x;
       p_out.y = p.y;
       p_out.z = p.z;
-      p_out.g = uint8_t(255);
-      p_out.b = uint8_t(255);
-      p_out.r = uint8_t(255);
-      p_out.a = static_cast<uint8_t>(125);
+      p_out.g = color.g;
+      p_out.b = color.b;
+      p_out.r = color.r;
+      p_out.a = color.a;
       norm_vox_cloud->push_back(p_out);
     }
     catch (std::out_of_range &ex)

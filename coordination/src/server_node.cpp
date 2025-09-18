@@ -28,6 +28,8 @@ public:
     radius_multiplier_ = this->declare_parameter<float>("server.radius_multiplier", 2.);
     minimum_distance_ = this->declare_parameter<float>("server.minimum_distance", 2.);
     std::string raw_cloud_out = this->declare_parameter<std::string>("server.raw_cloud_out", "raw_cloud");
+    std::string satisfied_pcl_topic = this->declare_parameter<std::string>("server.satisfied_pcl_topic", "satified_pcl");
+
     world_frame_ = this->declare_parameter<std::string>("world_frame", "map");
 
     hz_ = this->declare_parameter<int>("server.hz", 3);
@@ -63,6 +65,7 @@ public:
     // Publishers-----------------------
     voxel_publisher_ = create_publisher<sensor_msgs::msg::PointCloud2>(voxel_topic_out, 200);
     raw_cloud_publisher_ = create_publisher<sensor_msgs::msg::PointCloud2>(raw_cloud_out, 200);
+    satisfied_voxels_publisher_ = create_publisher<sensor_msgs::msg::PointCloud2>(satisfied_pcl_topic, 200);
 
     under_explored_publisher_ = create_publisher<visualization_msgs::msg::Marker>("points_to_explore_markers", 200);
     points_generic_ = create_publisher<visualization_msgs::msg::Marker>("Generic", 200);
@@ -140,11 +143,8 @@ private:
        estimating_voxel_ = false,
        satisfied_ = false;
   // Visualization Publishers------------------
-  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr voxel_publisher_;
-  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr raw_cloud_publisher_;
-  rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr under_explored_publisher_;
-  rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr points_generic_;
-  rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr circle_pub_;
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr voxel_publisher_ ,satisfied_voxels_publisher_,raw_cloud_publisher_;
+  rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr under_explored_publisher_,points_generic_,circle_pub_;
   rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pose_pub_;
   // ROS parameters-------------
   std::string world_frame_;
@@ -250,11 +250,12 @@ private:
               sendUnderExplored();
               reset_robot_sent_pcl();
             }
+            publishMonocromePCL(satisfied_voxels_publisher_, pcl_manager_->satisfied_voxels_, time_stamp_, violet);
           }
         }
       }
     }
-    publishPCL(raw_cloud_publisher_, pcl_manager_->raw_cloud_, time_stamp_);
+    publishMonocromePCL(raw_cloud_publisher_, pcl_manager_->raw_cloud_, time_stamp_, white);
   };
 
   void reset_robot_sent_pcl()
