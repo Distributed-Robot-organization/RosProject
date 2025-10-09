@@ -1,13 +1,20 @@
-version: "3.8"
-
 services:
   ros_docker:
-    user: "${UID}:${GID}"
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        USERNAME: rosuser
+        USER_UID: ${UID:-1000}
+        USER_GID: ${GID:-1000}
     image: dist_docker
     container_name: ros_docker
     environment:
       - DISPLAY=${DISPLAY}
+      - LIBGL_ALWAYS_INDIRECT=0
       - QT_X11_NO_MITSHM=1
+      - ROS_DOMAIN_ID=0
+      - CYCLONEDDS_URI=file:///ros2_ws/cyclonedds.xml
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ../../:/home/computer
@@ -16,4 +23,6 @@ services:
     working_dir: /home/computer
     stdin_open: true # -i flag
     tty: true # -t flag
+    devices:
+      - /dev/input/js0:/dev/input/js0
     restart: "no" # --rm equivalent is manual removal, docker-compose doesn’t auto-remove containers
