@@ -1,3 +1,6 @@
 [submodule "topic_tools"]
 	path = topic_tools
 	url = https://github.com/ros-tooling/topic_tools.git
+[submodule "shellfino_project"]
+	path = shellfino_project
+	url = https://github.com/pla10/Shelfino_ROS2.git
