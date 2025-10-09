@@ -10,7 +10,6 @@ ros2 launch nav2_bringup navigation_launch.py use_sim_time:=True
 
 ros2 launch dist_project start_slam.launch.py use_sim_time:=true
 
-
 ros2 run nav2_map_server map_saver_cli -f my_map
 
 # Controllo dei transform frame
@@ -55,3 +54,10 @@ ros_docker(){
 
 alias ros_docker_connect="docker exec -it ros_docker bash"
 ```
+
+Per visualizzare https://github.com/introlab/rtabmap_ros/tree/humble-devel
+
+Using cycloneDDS since the default one has problems in ROS2 humble.
+[Followed tutorial](https://roboticsbackend.com/ros2-nav2-generate-a-map-with-slam_toolbox/)
+## Map
+The map is defined at priori using the slamtoolbox to use the nav2 stack.
