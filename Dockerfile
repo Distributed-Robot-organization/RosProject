@@ -1,39 +1,88 @@
-# Extend the ROS2 distro
 FROM osrf/ros:humble-desktop-full
 
-#RUN useradd -ms /bin/bash ros && echo "ros:ros" | chpasswd && adduser ros sudo
-#RUN adduser ros video
+# Set environment variables
+ENV DEBIAN_FRONTEND=noninteractive
 
-# Install the required packages
-RUN apt-get update \
-    && sudo apt-get install -y \
+# Create a user with the same UID and GID as the host user
+ARG USERNAME=rosuser
+ARG USER_UID=1000
+ARG USER_GID=1000
+
+# Install packages as root first
+RUN apt-get update && \
+    apt-get install -y \
+    python3-pip \
+    python3-colcon-common-extensions \
+    nano \
+    sudo \
+    libpcl-dev \
+    ros-humble-slam-toolbox \
+    ros-humble-teleop-twist-joy \
+    ros-humble-teleop-twist-keyboard \
+    ros-humble-twist-mux \
+    ros-humble-joint-state-publisher-gui \
+    ros-humble-xacro \
     ros-humble-navigation2 \
     ros-humble-nav2-bringup \
-    ros-humble-gazebo-ros-pkgs\
-    python3-colcon-common-extensions\
-    python3-shapely\
+    ros-humble-gazebo-* \
+    ros-humble-ros-gz* \
+    ros-humble-gazebo-ros-pkgs \
+    ros-humble-ros2-control \
+    ros-humble-robot-state-publisher \
+    ros-humble-gazebo-ros2-control \
+    ros-humble-ros2-controllers \
     ros-humble-rmw-cyclonedds-cpp\
     ros-humble-rtabmap-*\
     ros-humble-pcl-*\
+    python3-shapely\
     libcpl-dev\
     gdb\
-    && rm -rf /var/lib/apt/lists/*
+    ros-humble-topic-tools && \
+    rm -rf /var/lib/apt/lists/*
 
-#ros-humble-turtlebot3* \
+RUN pip3 install pyserial \
+    flask \
+    flask-ask-sdk \
+    ask-sdk \
+    notebook \
+    ultralytics \
+    pyyaml \
+    xmlschema
 
+# Downgrade NumPy to fix compatibility issues with cv_bridge etc.
+RUN pip3 install "numpy<2"
 
-#RUN  sudo apt-get install ros2-humble-moveit* \
-#    ros-humble-ign-ros2-control
+# RUN pip3 install open3d
+# Create the workspace directory
+RUN mkdir -p /ros2_ws
 
+# Create user and group
+RUN groupadd --gid ${USER_GID} ${USERNAME} && \
+    useradd --uid ${USER_UID} --gid ${USER_GID} -m ${USERNAME} && \
+    usermod -aG sudo ${USERNAME} && \
+    echo "${USERNAME} ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers && \
+    chown -R ${USERNAME}:${USERNAME} /ros2_ws
 
+# Switch to non-root user
+USER ${USERNAME}
 
-# Set the environment variable required to run TurtleBot3
-#ENV TURTLEBOT3_MODEL=burger
-#ENV RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+# Set the workspace directory
+WORKDIR /ros2_ws
+
+# Source the ROS 2 setup script in the user's bashrc
+RUN echo "source /opt/ros/${ROS_DISTRO}/setup.bash" >> ~/.bashrc && \
+    echo "source /usr/share/gazebo/setup.sh" >> ~/.bashrc
 RUN echo 'alias refresh="source install/setup.bash"' >> ~/.bash_aliases
 RUN echo 'alias build="colcon build --symlink-install && source install/setup.bash"' >> ~/.bash_aliases
 RUN echo 'clean_build(){\
     rm -rf build install log \
     build\
-    }' >> ~/.bash_aliases
-RUN echo 'source /opt/ros/humble/setup.bash' >> ~/.bashrc
+    }\
+    ' >> ~/.bash_aliases
+
+# Default command to run when the container starts
+CMD ["bash"]
+
+# to mantain ros domain id in your pc copy this inside bashrc:
+# gedit ~/.bashrc
+# export ROS_DOMAIN_ID=42
