@@ -16,13 +16,19 @@ services:
       - ROS_DOMAIN_ID=0
       - CYCLONEDDS_URI=file:///ros2_ws/cyclonedds.xml
     volumes:
+      - ./:/ros2_ws/src
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
-      - ../../:/home/computer
+      - /tmp/.docker.xauth:/tmp/.docker.xauth:rw
+      - /dev/input:/dev/input
+      - /dev/bus/usb:/dev/bus/usb
     network_mode: host
     privileged: true
-    working_dir: /home/computer
     stdin_open: true # -i flag
     tty: true # -t flag
     devices:
       - /dev/input/js0:/dev/input/js0
-    restart: "no" # --rm equivalent is manual removal, docker-compose doesn’t auto-remove containers
+    command: bash
+
+
+# docker exec -it ros_docker bash
+# colcon build --symlink-install --parallel-workers 1 && source install/setup.bash 

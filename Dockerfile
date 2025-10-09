@@ -45,7 +45,7 @@ RUN pip3 install pyserial \
     flask-ask-sdk \
     ask-sdk \
     notebook \
-    ultralytics \
+    #ultralytics \
     pyyaml \
     xmlschema
 
