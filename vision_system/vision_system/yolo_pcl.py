@@ -17,7 +17,7 @@ from ultralytics import YOLO
 from std_msgs.msg import Bool
 import tf2_ros
 
-from dr_interfaces.msg import ObjectDetectionBox, ObjectDetectionResult
+from vision_system.msg import ObjectDetectionBox, ObjectDetectionResult
 from message_filters import ApproximateTimeSynchronizer, Subscriber
 
 # Importa le utility per lavorare con PointCloud2

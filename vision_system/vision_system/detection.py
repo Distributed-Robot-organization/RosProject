@@ -3,6 +3,7 @@ from ament_index_python.packages import get_package_share_directory
 import os
 import rclpy
 from rclpy.node import Node
+from std_srvs.srv import Trigger
 from sensor_msgs.msg import Image
 from std_msgs.msg import Header
 import geometry_msgs.msg
@@ -14,33 +15,30 @@ import cv2
 import tf2_ros
 import tf2_geometry_msgs
 
+
 from ultralytics import YOLO
 from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
 
-from dr_interfaces.msg import ObjectDetectionBox, ObjectDetectionResult
+from vision_system.msg import ObjectDetectionBox, ObjectDetectionResult
 
 
 class ObjectDetectionNode(Node):
-    """
-    @file object_detection.py
-    @brief YOLO-based object detection ROS 2 node with depth processing and TF publishing.
-
-    This node:
-    - Subscribes to RGB and depth images from a mirrored camera
-    - Runs YOLO object detection on the RGB image with pre trainer model
-    - Uses depth to compute 3D camera coordinates of detected objects
-    - Transforms those coordinates to the map frame
-    - Publishes detection results and annotated images
-    - Publishes a TF frame per detected object
-    """
     def __init__(self) -> None:
         super().__init__('object_detection_node')
         
-        # Declare parameters for topic names
-        self.declare_parameter('rgb_image_topic', 'camera/image_raw')
-        self.declare_parameter('depth_image_topic', 'camera/depth/image_raw')
-        self.declare_parameter('detection_image_topic', 'dr_vision/yolo_detection_image')
-        self.declare_parameter('detection_results_topic', 'dr_vision/yolo_detection_results')
+
+        # import the model
+        package_share_directory = get_package_share_directory('vision_system')
+        model_path = os.path.join(package_share_directory, 'models', 'best.pt')
+        self.model = YOLO(model_path)
+        
+        #for each shelfino
+        self.declare_parameter('rgb_image_topic', '/shelfino1/f_camera/image_raw')
+        self.declare_parameter('depth_image_topic', '/shelfino1/f_camera/depth/image_raw')
+        
+        self.declare_parameter('detection_image_topic', 'vision_system/yolo_detection_image')
+        self.declare_parameter('detection_results_topic', 'vision_system/yolo_detection_results')
+        
         
         # Get parameter values
         rgb_topic = self.get_parameter('rgb_image_topic').get_parameter_value().string_value
@@ -48,18 +46,14 @@ class ObjectDetectionNode(Node):
         detection_image_topic = self.get_parameter('detection_image_topic').get_parameter_value().string_value
         detection_results_topic = self.get_parameter('detection_results_topic').get_parameter_value().string_value
         
+        
         # QoS settings for the subscriptions
         qos_profile = QoSProfile(
             reliability=ReliabilityPolicy.RELIABLE,
             durability=DurabilityPolicy.VOLATILE,
             depth=20
         )
-            
-        package_share_directory = get_package_share_directory('dr_vision')
-        #import the model
-        model_path = os.path.join(package_share_directory, 'models', 'best.pt')
-        self.model = YOLO(model_path)
-        
+        # == SUBSCRIBERS ==
         #subscribe to RGB and depth images using parameters
         self.rgb_subscription = self.create_subscription(
             Image,
@@ -74,44 +68,60 @@ class ObjectDetectionNode(Node):
             qos_profile
         )
         
-        #publish the detection results using parameters
+        # == PUBLISHER ==
         self.image_publisher = self.create_publisher(Image, detection_image_topic, 1)
-        self.detection_publisher = self.create_publisher(
-            ObjectDetectionResult,
-            detection_results_topic,
-            1
-        )
-        #publish the TF frames
+        self.detection_publisher = self.create_publisher(ObjectDetectionResult,detection_results_topic, 1)
+        
+        # == TRIGGER SERVICES ==
+        self.srv = self.create_service(Trigger, 'trigger_detection', self.trigger_callback)
+        
+        self.detection_triggered = False
+        
+        # == Parameters ==
+        self.confidence_threshold = 0.7
+        
         self.tf_broadcaster = tf2_ros.TransformBroadcaster(self)
         self.tf_buffer = tf2_ros.Buffer()
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
         
-        # Initialize the CvBridge
         self.bridge = CvBridge()
         self.depth_image = None
         self.get_logger().info("Object Detection Node with Depth and map Transform has been started.")
+        
 
+    
+    def trigger_callback(self, request, response):
+        self.get_logger().info('Trigger received!')
+        self.detection_triggered = not self.detection_triggered
+        if self.detection_triggered:
+            self.get_logger().info('Object detection activated.')
+            response.success = True
+            response.message = 'Object detection activated successfully.'
+        else:
+            self.get_logger().info('Object detection deactivated.')
+            response.success = False
+            response.message = 'Object detection deactivated.'
+        return response
+    
     def depth_callback(self, depth_data: Image) -> None:
-        """
-        Callback to store the latest depth image for 3D calculations.
-        """
         try:
             self.depth_image = self.bridge.imgmsg_to_cv2(depth_data, desired_encoding='32FC1')
         except Exception as e:
             self.get_logger().error(f"Error converting depth image: {e}")
 
     def rgb_callback(self, rgb_data: Image) -> None:
-        """
-        Callback to process an RGB image and run YOLO detection.
-        Publishes annotated image, detection results, and object transforms.
-        """
+        # Check if detection is triggered
+        if not self.detection_triggered:
+            return
+        
         cv_image = self.bridge.imgmsg_to_cv2(rgb_data, "bgr8")
         results = self.model(cv_image)
 
         if len(results) > 0 and results[0].boxes is not None:
             
             boxes = results[0].boxes
-            annotated_frame = results[0].plot()
+            # Inizia con l'immagine originale
+            annotated_frame = cv_image.copy()
 
             detection_msg = ObjectDetectionResult()
             detection_msg.header = Header()
@@ -123,23 +133,34 @@ class ObjectDetectionNode(Node):
                 conf = float(box.conf[0])
                 cls_id = int(box.cls[0])
                 
+                # Filtra subito gli oggetti sotto la soglia
+                if conf < self.confidence_threshold:
+                    continue
+                
                 label = results[0].names[cls_id] if hasattr(results[0], 'names') else str(cls_id)
 
                 x_min, y_min, x_max, y_max = xyxy
                 cx = int((x_min + x_max) / 2.0)
                 cy = int((y_min + y_max) / 2.0)
 
+                # Disegna solo gli oggetti sopra la soglia
+                color = (0, 255, 0)  # Verde
+                cv2.rectangle(annotated_frame, 
+                            (int(x_min), int(y_min)), 
+                            (int(x_max), int(y_max)), 
+                            color, 2)
+                
+                # Label con confidence
+                label_text = f"{label} {conf:.2f}"
+                cv2.putText(annotated_frame, label_text, 
+                          (int(x_min), int(y_min) - 10),
+                          cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+
                 x_3d, y_3d, z_3d, map_x, map_y, map_z, distance = self.yolo_detection(
                     cx, cy, x_min, y_max, annotated_frame, rgb_data
                 )
-
-                # self.get_logger().info(
-                #     f"Objects[{i}]: label={label}, conf={conf:.2f}, bbox=({x_min:.1f},{y_min:.1f},{x_max:.1f},{y_max:.1f}), "
-                #     f"center=({cx},{cy}), distance={distance:.3f}, 3D_cam=({x_3d},{y_3d},{z_3d})"
-                # )
-
                 cv2.circle(annotated_frame, (cx, cy), 5, (0, 255, 0), -1)
-
+                
                 # Messaggio di detection
                 box_msg = ObjectDetectionBox()
                 box_msg.id = i
@@ -158,10 +179,13 @@ class ObjectDetectionNode(Node):
 
                 self.publish_tf(map_x, map_y, map_z, f"{label}_{i}")
 
-            self.detection_publisher.publish(detection_msg)
-            
-            annotated_msg = self.bridge.cv2_to_imgmsg(annotated_frame, encoding="bgr8")
-            self.image_publisher.publish(annotated_msg)
+            # Pubblica SOLO se ci sono oggetti sopra la soglia
+            if len(detection_msg.boxes) > 0:
+                self.detection_publisher.publish(detection_msg)
+                annotated_msg = self.bridge.cv2_to_imgmsg(annotated_frame, encoding="bgr8")
+                self.image_publisher.publish(annotated_msg)
+            else:
+                self.get_logger().info("No objects detected above confidence threshold.")
         else:
             self.get_logger().info("I don't see any objects.")
 
