@@ -26,13 +26,18 @@ from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
 
 from vision_system.msg import ObjectDetectionBox, ObjectDetectionResult
 
+# Import PointCloudManager
+import sys
+from utility_ply import PointCloudManager
+
 
 class ObjectDetectionNode(Node):
+
     def __init__(self) -> None:
         super().__init__('object_detection_node')
         
         # Set PLY output directory to /ros2_ws
-        self.ply_out_dir = '/ros2_ws'
+        self.ply_out_dir = '/ros2_ws/src/vision_system/script'
         os.makedirs(self.ply_out_dir, exist_ok=True)
 
         # import the model
@@ -53,18 +58,18 @@ class ObjectDetectionNode(Node):
         # Get parameter values
         rgb_topic = self.get_parameter('rgb_image_topic').get_parameter_value().string_value
         depth_topic = self.get_parameter('depth_image_topic').get_parameter_value().string_value
-        detection_image_topic = self.get_parameter('detection_image_topic').get_parameter_value().string_value
+        image_detection_topic = self.get_parameter('detection_image_topic').get_parameter_value().string_value
         detection_results_topic = self.get_parameter('detection_results_topic').get_parameter_value().string_value
         point_cloud_topic = self.get_parameter('point_cloud_topic').get_parameter_value().string_value
         camera_info_topic = self.get_parameter('info_camera').get_parameter_value().string_value
 
-        
         # QoS settings for the subscriptions
         qos_profile = QoSProfile(
             reliability=ReliabilityPolicy.RELIABLE,
             durability=DurabilityPolicy.VOLATILE,
             depth=20
         )
+        
         # == SUBSCRIBERS ==
         self.rgb_subscription = self.create_subscription(
             Image,
@@ -77,14 +82,13 @@ class ObjectDetectionNode(Node):
             depth_topic,
             self.depth_callback,
             qos_profile
-        )
-        
+        )    
         self.pc_subscription = self.create_subscription(
             PointCloud2, 
             point_cloud_topic, 
             self.pointcloud_callback, 
             qos_profile
-        )
+        )      
         self.camera_info_sub = self.create_subscription(
             CameraInfo, 
             camera_info_topic, 
@@ -93,8 +97,8 @@ class ObjectDetectionNode(Node):
         )
         
         # == PUBLISHER ==
-        self.image_publisher = self.create_publisher(Image, detection_image_topic, 1)
-        self.detection_publisher = self.create_publisher(ObjectDetectionResult,detection_results_topic, 1)
+        self.image_detetection_pub = self.create_publisher(Image, image_detection_topic, 1)
+        self.detection_res_pub = self.create_publisher(ObjectDetectionResult,detection_results_topic, 1)
         
         # == TRIGGER SERVICES ==
         self.srv_detection = self.create_service(Trigger, 'trigger_detection', self.trigger_detection_callback)
@@ -102,6 +106,7 @@ class ObjectDetectionNode(Node):
         
         self.detection_triggered = False
         self.pcl_triggered = False
+        
         # == Parameters ==
         self.confidence_threshold = 0.5
         
@@ -120,9 +125,7 @@ class ObjectDetectionNode(Node):
         self.detected_objects_list = []
         self.get_logger().info("Object Detection Node with Depth and map Transform has been started.")
         
-        
-        
-
+    # == detection part ==
     def trigger_detection_callback(self, request, response):
         self.get_logger().info('Trigger received!')
         self.detection_triggered = not self.detection_triggered
@@ -135,30 +138,6 @@ class ObjectDetectionNode(Node):
             response.success = False
             response.message = 'Object detection deactivated.'
         return response
-    
-    
-    def trigger_pcl_callback(self, request, response):
-        self.get_logger().info('PCL Trigger received!')
-        self.pcl_triggered = not self.pcl_triggered
-        if self.pcl_triggered:
-            self.get_logger().info('PCL saving activated.')
-            # Salva le point cloud degli oggetti rilevati
-            if self.detected_objects_list:
-                self.get_3d_points_from_bbox()
-                response.success = True
-                response.message = f'PCL saving activated. Saved {len(self.detected_objects_list)} objects.'
-            else:
-                self.get_logger().warn('No detected objects to save.')
-                response.success = False
-                response.message = 'PCL saving activated but no objects detected.'
-        else:
-            self.get_logger().info('PCL saving deactivated.')
-            response.success = True
-            response.message = 'PCL saving deactivated.'
-        return response
-    
-    def pointcloud_callback(self, cloud_msg: PointCloud2) -> None:
-        self.last_cloud = cloud_msg
 
     def camera_info_callback(self, info: CameraInfo) -> None:
         self.last_cam_info = info
@@ -237,6 +216,9 @@ class ObjectDetectionNode(Node):
 
                 detection_msg.boxes.append(box_msg)
                 
+                # Extract 3D points from bounding box
+                points_3d = self.extract_bbox_pointcloud(int(x_min), int(y_min), int(x_max), int(y_max))
+                
                 detected_objects = {
                     'id': i,
                     'label': label,
@@ -247,16 +229,17 @@ class ObjectDetectionNode(Node):
                         'x': map_x,
                         'y': map_y,
                         'z': map_z
-                    }
+                    },
+                    'pcl_object': points_3d
                 }
                 self.detected_objects_list.append(detected_objects)
                 self.publish_tf(map_x, map_y, map_z, f"{label}_{i}")
 
             # Pubblica SOLO se ci sono oggetti sopra la soglia
             if len(detection_msg.boxes) > 0:
-                self.detection_publisher.publish(detection_msg)
+                self.detection_res_pub.publish(detection_msg)
                 annotated_msg = self.bridge.cv2_to_imgmsg(annotated_frame, encoding="bgr8")
-                self.image_publisher.publish(annotated_msg)
+                self.image_detetection_pub.publish(annotated_msg)
             else:
                 self.get_logger().info("No objects detected above confidence threshold.")
         else:
@@ -300,14 +283,14 @@ class ObjectDetectionNode(Node):
                     try:
                         camera_point = geometry_msgs.msg.PointStamped()
                         camera_point.header.stamp = rgb_data.header.stamp
-                        camera_point.header.frame_id = "camera_link_optical"
+                        camera_point.header.frame_id = "shelfino1/frontal_camera_link_optical"
                         camera_point.point.x = x_3d
                         camera_point.point.y = y_3d
                         camera_point.point.z = z_3d
 
                         transform = self.tf_buffer.lookup_transform(
                             'map',
-                            'camera_link_optical',
+                            'shelfino1/frontal_camera_link_optical',  # CORREZIONE
                             rclpy.time.Time())
 
                         map_point = tf2_geometry_msgs.do_transform_point(camera_point, transform)
@@ -342,149 +325,106 @@ class ObjectDetectionNode(Node):
     def get_detected_objects(self):
         return self.detected_objects_list
 
-    def get_3d_points_from_bbox(self):
+    # == point cloud part ==
+    def trigger_pcl_callback(self, request, response):
+        self.get_logger().info('PCL Trigger received!')
+        self.pcl_triggered = not self.pcl_triggered
+        if self.pcl_triggered:
+            self.get_logger().info('PCL saving activated.')
+            # Salva le point cloud degli oggetti rilevati
+            if self.detected_objects_list:
+                try:
+                    # Istanzia PointCloudManager con il percorso di output
+                    pcl_manager = PointCloudManager(
+                        detected_objects_list=self.detected_objects_list,
+                        output_dir=self.ply_out_dir
+                    )
+                    # Salva i file PLY
+                    pcl_manager.save_object_pointcloud_to_file()
+                    
+                    response.success = True
+                    response.message = f'PCL saved successfully. Saved {len(self.detected_objects_list)} objects to {self.ply_out_dir}.'
+                    self.get_logger().info(response.message)
+                except Exception as e:
+                    self.get_logger().error(f'Error saving PLY files: {e}')
+                    response.success = False
+                    response.message = f'Error saving PLY files: {e}'
+            else:
+                self.get_logger().warn('No detected objects to save.')
+                response.success = False
+                response.message = 'PCL saving activated but no objects detected.'
+        else:
+            self.get_logger().info('PCL saving deactivated.')
+            response.success = True
+            response.message = 'PCL saving deactivated.'
+        return response
+    
+    def pointcloud_callback(self, cloud_msg: PointCloud2) -> None:
+        self.last_cloud = cloud_msg
+    
+    def extract_bbox_pointcloud(self, x_min: int, y_min: int, x_max: int, y_max: int) -> list:
         """
-        Estrae e salva le point cloud per tutti gli oggetti rilevati
+        Extract 3D points from the point cloud within the given bounding box.
+        Returns a list of dictionaries with x, y, z coordinates.
         """
-        if not self.detected_objects_list:
-            self.get_logger().warn("No detected objects to extract 3D points from.")
-            return
-        
         if self.last_cloud is None:
-            self.get_logger().error("No point cloud data available.")
-            return
+            return []
         
-        self.get_logger().info(f"Processing {len(self.detected_objects_list)} detected objects...")
+        points_3d = []
         
-        for obj in self.detected_objects_list:
-            try:
-                bbox = obj['bbox']
-                x_min = int(bbox[0])
-                y_min = int(bbox[1])
-                x_max = int(bbox[2])
-                y_max = int(bbox[3])
-                
-                # Estrai i punti 3D dalla bounding box
-                points_3d = self.extract_3d_points_from_bbox(
-                    self.last_cloud, x_min, y_min, x_max, y_max
-                )
-                
-                if points_3d:
-                    self.get_logger().info(
-                        f"Object {obj['label']} (ID {obj['id']}): Found {len(points_3d)} 3D points"
-                    )
-                    
-                    # Salva la point cloud su file
-                    self.save_object_pointcloud_to_file(
-                        obj['label'], points_3d, obj['id']
-                    )
-                else:
-                    self.get_logger().warn(
-                        f"No valid 3D points found for object {obj['label']} (ID {obj['id']})"
-                    )
-                    
-            except Exception as e:
-                self.get_logger().error(f"Error processing object {obj.get('id', 'unknown')}: {e}")
-
-    def extract_3d_points_from_bbox(self, pcl_msg: PointCloud2, x_min: int, y_min: int, 
-                                     x_max: int, y_max: int):
-        """
-        Estrae tutti i punti 3D dalla point cloud all'interno della bounding box
-        """
+        # Limita le coordinate ai bounds della point cloud
+        x_min = max(0, min(x_min, self.last_cloud.width - 1))
+        y_min = max(0, min(y_min, self.last_cloud.height - 1))
+        x_max = max(0, min(x_max, self.last_cloud.width - 1))
+        y_max = max(0, min(y_max, self.last_cloud.height - 1))
+        
+        bbox_area = (x_max - x_min) * (y_max - y_min)
+        
         try:
-            # Limita le coordinate ai bounds della point cloud
-            x_min = max(0, min(x_min, pcl_msg.width - 1))
-            y_min = max(0, min(y_min, pcl_msg.height - 1))
-            x_max = max(0, min(x_max, pcl_msg.width - 1))
-            y_max = max(0, min(y_max, pcl_msg.height - 1))
-            
-            points_3d = []
-            
-            # Se la bounding box è piccola, leggi punto per punto
-            bbox_area = (x_max - x_min) * (y_max - y_min)
             if bbox_area < 1000:
+                # bbox piccole: lettura punto per punto
                 for y in range(y_min, y_max + 1):
                     for x in range(x_min, x_max + 1):
                         try:
-                            point_gen = pc2.read_points(
-                                pcl_msg, 
-                                field_names=("x", "y", "z"), 
-                                skip_nans=False, 
-                                uvs=[[x, y]]
-                            )
+                            point = next(pc2.read_points(
+                                self.last_cloud, field_names=("x", "y", "z"),
+                                skip_nans=False, uvs=[[x, y]]
+                            ), None)
                             
-                            for point in point_gen:
-                                if len(point) >= 3 and not (
-                                    np.isnan(point[0]) or np.isnan(point[1]) or np.isnan(point[2])
-                                ):
-                                    points_3d.append({
-                                        'x': float(point[0]),
-                                        'y': float(point[1]),
-                                        'z': float(point[2]),
-                                        'pixel_x': x,
-                                        'pixel_y': y
-                                    })
-                                break
+                            if point and len(point) >= 3 and not any(np.isnan(point)):
+                                points_3d.append({
+                                    'x': float(point[0]), 
+                                    'y': float(point[1]),
+                                    'z': float(point[2]), 
+                                    'pixel_x': x, 
+                                    'pixel_y': y
+                                })
                         except Exception:
                             continue
             else:
-                # Per bounding box grandi, leggi tutti i punti e filtra
+                # Per bbox grandi: leggi tutti i punti e filtra
                 all_points = list(pc2.read_points(
-                    pcl_msg, field_names=("x", "y", "z"), skip_nans=True
+                    self.last_cloud, field_names=("x", "y", "z"), skip_nans=True
                 ))
                 
                 for i, point in enumerate(all_points):
                     if len(point) >= 3:
-                        pixel_x = i % pcl_msg.width
-                        pixel_y = i // pcl_msg.width
+                        pixel_x = i % self.last_cloud.width
+                        pixel_y = i // self.last_cloud.width
                         
                         if x_min <= pixel_x <= x_max and y_min <= pixel_y <= y_max:
-                            if not (np.isnan(point[0]) or np.isnan(point[1]) or np.isnan(point[2])):
-                                points_3d.append({
-                                    'x': float(point[0]),
-                                    'y': float(point[1]),
-                                    'z': float(point[2]),
-                                    'pixel_x': pixel_x,
-                                    'pixel_y': pixel_y
-                                })
-            
-            return points_3d
-            
+                            points_3d.append({
+                                'x': float(point[0]), 
+                                'y': float(point[1]),
+                                'z': float(point[2]), 
+                                'pixel_x': pixel_x, 
+                                'pixel_y': pixel_y
+                            })
         except Exception as e:
-            self.get_logger().error(f"Error extracting 3D points from bbox: {e}")
-            import traceback
-            self.get_logger().error(f"Traceback: {traceback.format_exc()}")
-            return []
-
-    def save_object_pointcloud_to_file(self, label: str, points_3d: list, object_id: int):
-        """
-        Salva la point cloud dell'oggetto in formato PLY
-        """
-        try:
-            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = os.path.join(self.ply_out_dir, f"object_{label}_{object_id}_{timestamp}.ply")
-            
-            with open(filename, 'w') as f:
-                # Header PLY
-                f.write("ply\n")
-                f.write("format ascii 1.0\n")
-                f.write(f"element vertex {len(points_3d)}\n")
-                f.write("property float x\n")
-                f.write("property float y\n")
-                f.write("property float z\n")
-                f.write("end_header\n")
-                
-                # Dati dei punti
-                for point in points_3d:
-                    f.write(f"{point['x']:.6f} {point['y']:.6f} {point['z']:.6f}\n")
-            
-            self.get_logger().info(f"✓ Saved {len(points_3d)} points to {filename}")
-            
-        except Exception as e:
-            self.get_logger().error(f"Error saving pointcloud to file: {e}")
-            import traceback
-            self.get_logger().error(f"Traceback: {traceback.format_exc()}")
-
+            self.get_logger().error(f"Error extracting pointcloud from bbox: {e}")
+        
+        return points_3d
+    
 def main(args=None):
     rclpy.init(args=args)
     node = ObjectDetectionNode()

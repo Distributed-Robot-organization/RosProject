@@ -5,8 +5,8 @@ def generate_launch_description():
     
     detection = Node(
         package='vision_system',
-        executable='detection.py',  
-        name='detection',
+        executable='detection_pcl.py',  
+        name='detection_pcl',
         output='screen',
         parameters=[{
             'rgb_image_topic': '/shelfino1/f_camera/image_raw',
@@ -20,5 +20,5 @@ def generate_launch_description():
         detection,
     ])
     
-    #ros2 run teleop_twist_keyboard teleop_twist_keyboard
+    #ros2 run teleop_twist_keyboard teleop_twist_keyboard cmd_vel:=/shelfino1/cmd_vel
     #ros2 service call /trigger_detection std_srvs/srv/Trigger

@@ -31,7 +31,7 @@ endif()
 
 
 install(
-  DIRECTORY launch models
+  DIRECTORY launch models script
   DESTINATION share/${PROJECT_NAME}
 )
 
@@ -40,7 +40,10 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/ObjectDetectionBox.msg"
   DEPENDENCIES builtin_interfaces std_msgs
 )
-
+install(PROGRAMS
+  vision_system/detection_pcl.py
+  DESTINATION lib/${PROJECT_NAME}
+)
 ament_export_dependencies(
   rosidl_default_runtime
   std_msgs
