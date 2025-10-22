@@ -21,4 +21,8 @@ def generate_launch_description():
     ])
     
     #ros2 run teleop_twist_keyboard teleop_twist_keyboard cmd_vel:=/shelfino1/cmd_vel
+    
+    #ros2 service call /trigger_pcl std_srvs/srv/Trigger
+
     #ros2 service call /trigger_detection std_srvs/srv/Trigger
+    

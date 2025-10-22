@@ -26,7 +26,6 @@ from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
 
 from vision_system.msg import ObjectDetectionBox, ObjectDetectionResult
 
-# Import PointCloudManager
 import sys
 from utility_ply import PointCloudManager
 
@@ -100,9 +99,11 @@ class ObjectDetectionNode(Node):
         self.image_detetection_pub = self.create_publisher(Image, image_detection_topic, 1)
         self.detection_res_pub = self.create_publisher(ObjectDetectionResult,detection_results_topic, 1)
         
+        
         # == TRIGGER SERVICES ==
         self.srv_detection = self.create_service(Trigger, 'trigger_detection', self.trigger_detection_callback)
         self.srv_pcl = self.create_service(Trigger, 'trigger_pcl', self.trigger_pcl_callback)
+        self.srv_filter_pcl = self.create_service(Trigger, 'trigger_filter_pcl', self.trigger_filter_pcl_callback)
         
         self.detection_triggered = False
         self.pcl_triggered = False
@@ -123,6 +124,7 @@ class ObjectDetectionNode(Node):
         self.last_cam_info = None
         
         self.detected_objects_list = []
+        self.pcl_manager = PointCloudManager()
         self.get_logger().info("Object Detection Node with Depth and map Transform has been started.")
         
     # == detection part ==
@@ -335,12 +337,12 @@ class ObjectDetectionNode(Node):
             if self.detected_objects_list:
                 try:
                     # Istanzia PointCloudManager con il percorso di output
-                    pcl_manager = PointCloudManager(
+                    self.pcl_manager = PointCloudManager(
                         detected_objects_list=self.detected_objects_list,
                         output_dir=self.ply_out_dir
                     )
                     # Salva i file PLY
-                    pcl_manager.save_object_pointcloud_to_file()
+                    self.pcl_manager.save_object_pointcloud_to_file()
                     
                     response.success = True
                     response.message = f'PCL saved successfully. Saved {len(self.detected_objects_list)} objects to {self.ply_out_dir}.'
@@ -425,6 +427,55 @@ class ObjectDetectionNode(Node):
         
         return points_3d
     
+    def trigger_filter_pcl_callback(self, request, response):
+        self.get_logger().info('PCL Filter Trigger received!')
+        
+        try:
+            self.filtering_step()
+            response.success = True
+            response.message = 'PCL filtering completed successfully.'
+        except Exception as e:
+            self.get_logger().error(f'Error during PCL filtering: {e}')
+            response.success = False
+            response.message = f'PCL filtering failed: {e}'
+        
+        return response
+    
+    def filtering_step(self):
+        """
+        Verifies that detected_objects_list is not empty and saves filtered point clouds.
+        """
+        if not self.pcl_manager or not hasattr(self.pcl_manager, 'detected_objects_list'):
+            self.get_logger().warn('PCL Manager not initialized.')
+            raise ValueError('PCL Manager not initialized.')
+        
+        if not self.pcl_manager.detected_objects_list:
+            self.get_logger().warn('No detected objects in PCL Manager to filter.')
+            raise ValueError('No detected objects to filter.')
+        
+        self.get_logger().info(f'Starting filtering for {len(self.pcl_manager.detected_objects_list)} objects.')
+        
+        # Iterate through each detected object and clean/smooth its point cloud
+        for obj in self.pcl_manager.detected_objects_list:
+            if 'pcl_object' in obj and obj['pcl_object']:
+                # Get the point cloud data for this object
+                pcd = obj['pcl_object']
+                # Clean and smooth the point cloud for this specific object
+                obj['pcl_object'] = self.pcl_manager.clean_and_smooth_point_cloud(pcd)
+                self.get_logger().info(f"Filtered object {obj['id']} ({obj['label']})")
+        
+        # Update true_object_pcl with filtered points
+        self.pcl_manager.get_3d_points_from_bbox()
+        
+        # Save filtered point clouds with "filter_pcl" nickname
+        self.pcl_manager.save_object_pointcloud_to_file(nick_name="filter_pcl")
+        
+        # Visualize filtered point clouds
+        self.get_logger().info('Visualizing filtered point clouds...')
+        self.pcl_manager.visualize_filtered_objects()
+        
+        self.get_logger().info('Filtered point clouds saved successfully.')
+
 def main(args=None):
     rclpy.init(args=args)
     node = ObjectDetectionNode()
