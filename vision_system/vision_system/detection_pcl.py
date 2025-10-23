@@ -248,9 +248,6 @@ class ObjectDetectionNode(Node):
             self.get_logger().info("I don't see any objects.")
 
     def yolo_detection(self, cx, cy, x_min, y_max, annotated_frame, rgb_data):
-        """
-        Computes 3D position in the camera and map frame from bounding box center.
-        """
         x_3d = y_3d = z_3d = None
         map_x = map_y = map_z = 0.0
         label_3d = ""
@@ -305,9 +302,6 @@ class ObjectDetectionNode(Node):
         return x_3d, y_3d, z_3d, map_x, map_y, map_z, distance
 
     def publish_tf(self, x_map: float, y_map: float, z_map: float, object_name: str) -> None:
-        """
-        Publishes a static transform (TF) for a detected object.
-        """
         t = geometry_msgs.msg.TransformStamped()
         t.header.stamp = self.get_clock().now().to_msg()
         t.header.frame_id = "map"  # Frame di riferimento 
@@ -326,6 +320,7 @@ class ObjectDetectionNode(Node):
 
     def get_detected_objects(self):
         return self.detected_objects_list
+
 
     # == point cloud part ==
     def trigger_pcl_callback(self, request, response):
@@ -361,20 +356,28 @@ class ObjectDetectionNode(Node):
             response.message = 'PCL saving deactivated.'
         return response
     
+    def trigger_filter_pcl_callback(self, request, response):
+        self.get_logger().info('PCL Filter Trigger received!')
+        try:
+            self.filtering_step()
+            response.success = True
+            response.message = 'PCL filtering completed successfully.'
+        except Exception as e:
+            self.get_logger().error(f'Error during PCL filtering: {e}')
+            response.success = False
+            response.message = f'PCL filtering failed: {e}'
+        
+        return response
+    
     def pointcloud_callback(self, cloud_msg: PointCloud2) -> None:
         self.last_cloud = cloud_msg
     
     def extract_bbox_pointcloud(self, x_min: int, y_min: int, x_max: int, y_max: int) -> list:
-        """
-        Extract 3D points from the point cloud within the given bounding box.
-        Returns a list of dictionaries with x, y, z coordinates.
-        """
         if self.last_cloud is None:
             return []
         
         points_3d = []
         
-        # Limita le coordinate ai bounds della point cloud
         x_min = max(0, min(x_min, self.last_cloud.width - 1))
         y_min = max(0, min(y_min, self.last_cloud.height - 1))
         x_max = max(0, min(x_max, self.last_cloud.width - 1))
@@ -384,7 +387,7 @@ class ObjectDetectionNode(Node):
         
         try:
             if bbox_area < 1000:
-                # bbox piccole: lettura punto per punto
+                # bbox piccole
                 for y in range(y_min, y_max + 1):
                     for x in range(x_min, x_max + 1):
                         try:
@@ -404,7 +407,7 @@ class ObjectDetectionNode(Node):
                         except Exception:
                             continue
             else:
-                # Per bbox grandi: leggi tutti i punti e filtra
+                # Per bbox grandi
                 all_points = list(pc2.read_points(
                     self.last_cloud, field_names=("x", "y", "z"), skip_nans=True
                 ))
@@ -426,28 +429,12 @@ class ObjectDetectionNode(Node):
             self.get_logger().error(f"Error extracting pointcloud from bbox: {e}")
         
         return points_3d
-    
-    def trigger_filter_pcl_callback(self, request, response):
-        self.get_logger().info('PCL Filter Trigger received!')
-        
-        try:
-            self.filtering_step()
-            response.success = True
-            response.message = 'PCL filtering completed successfully.'
-        except Exception as e:
-            self.get_logger().error(f'Error during PCL filtering: {e}')
-            response.success = False
-            response.message = f'PCL filtering failed: {e}'
-        
-        return response
-    
+       
     def filtering_step(self):
-        """
-        Verifies that detected_objects_list is not empty and saves filtered point clouds.
-        """
+        # check if pcl_manager have components 
         if not self.pcl_manager or not hasattr(self.pcl_manager, 'detected_objects_list'):
-            self.get_logger().warn('PCL Manager not initialized.')
-            raise ValueError('PCL Manager not initialized.')
+            self.get_logger().warn('PCL not initialized.')
+            raise ValueError('PCL not initialized.')
         
         if not self.pcl_manager.detected_objects_list:
             self.get_logger().warn('No detected objects in PCL Manager to filter.')
@@ -455,24 +442,20 @@ class ObjectDetectionNode(Node):
         
         self.get_logger().info(f'Starting filtering for {len(self.pcl_manager.detected_objects_list)} objects.')
         
-        # Iterate through each detected object and clean/smooth its point cloud
         for obj in self.pcl_manager.detected_objects_list:
             if 'pcl_object' in obj and obj['pcl_object']:
-                # Get the point cloud data for this object
+                
                 pcd = obj['pcl_object']
-                # Clean and smooth the point cloud for this specific object
+                
                 obj['pcl_object'] = self.pcl_manager.clean_and_smooth_point_cloud(pcd)
                 self.get_logger().info(f"Filtered object {obj['id']} ({obj['label']})")
         
-        # Update true_object_pcl with filtered points
+        
         self.pcl_manager.get_3d_points_from_bbox()
-        
-        # Save filtered point clouds with "filter_pcl" nickname
         self.pcl_manager.save_object_pointcloud_to_file(nick_name="filter_pcl")
-        
         # Visualize filtered point clouds
         self.get_logger().info('Visualizing filtered point clouds...')
-        self.pcl_manager.visualize_filtered_objects()
+        # self.pcl_manager.visualize_filtered_objects()
         
         self.get_logger().info('Filtered point clouds saved successfully.')
 

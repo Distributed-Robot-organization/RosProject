@@ -27,15 +27,14 @@ class PointCloudManager:
             print("[WARN] NO OBJECT.")
             return
 
-        print(f"[INFO] elboration of {len(self.detected_objects_list)} object detected...")
-
+        #print(f"[INFO] elboration of {len(self.detected_objects_list)} object detected...")
         for obj in self.detected_objects_list:
             label = obj.get('label', 'unknown')
             obj_id = obj.get('id', -1)
             points_3d = obj.get('pcl_object', [])
 
             if not points_3d:
-                print(f"[WARN] Nessun punto 3D valido per l'oggetto '{label}' (ID {obj_id}).")
+                print(f"[WARN] no 3D point valid for object '{label}' (ID {obj_id}).")
                 continue
 
             self.true_object_pcl.append({
@@ -43,14 +42,13 @@ class PointCloudManager:
                 'id': obj_id,
                 'points': points_3d
             })
-            print(f"[INFO] Oggetto '{label}' (ID {obj_id}) → trovati {len(points_3d)} punti 3D.")
+            #print(f"[INFO] object '{label}' (ID {obj_id}) -- relative points {len(points_3d)}")
 
     def save_object_pointcloud_to_file(self,nick_name="object"):
         
         if not self.true_object_pcl:
-            print(f"[WARN] Nessun oggetto da salvare in true_object_pcl.")
+            print(f"[WARN] no object to save for true_object_pcl.")
             return
-
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 
         for obj_data in self.true_object_pcl:
@@ -59,7 +57,7 @@ class PointCloudManager:
             points_3d = obj_data.get('points', [])
 
             if not points_3d:
-                print(f"[WARN] Nessun punto da salvare per l'oggetto '{label}' (ID {object_id}).")
+                print(f"[WARN] no point for object: '{label}' (ID {object_id}).")
                 continue
 
             filename = os.path.join(self.output_dir, f"{nick_name}_{label}_{object_id}_{timestamp}.ply")
@@ -69,7 +67,7 @@ class PointCloudManager:
                     # Header PLY
                     f.write("ply\n")
                     f.write("format ascii 1.0\n")
-                    f.write(f"comment Oggetto '{label}' (ID {object_id})\n")
+                    f.write(f"comment object '{label}' (ID {object_id})\n")
                     f.write(f"element vertex {len(points_3d)}\n")
                     f.write("property float x\n")
                     f.write("property float y\n")
@@ -83,119 +81,45 @@ class PointCloudManager:
                         z = p.get('z', 0.0)
                         f.write(f"{x:.6f} {y:.6f} {z:.6f}\n")
 
-                print(f"[✓] Salvato {len(points_3d)} punti in '{filename}'.")
+                print(f"[OK!!] SAVED {len(points_3d)} Points in: '{filename}'.")
 
             except Exception as e:
-                print(f"[ERROR] Errore nel salvataggio del file PLY: {e}")
+                print(f"[ERROR] Error during save file PLY: {e}")
 
     def load_point_clouds_from_files(self, file_paths):
         
-        
         for file_path in file_paths:
             if not os.path.exists(file_path):
-                print(f"[WARN] File non trovato: {file_path}")
+                print(f"[WARN] File not find: {file_path}")
                 continue
             
             pcd = o3d.io.read_point_cloud(file_path)
-            print(f"[INFO] Caricata point cloud da '{file_path}': {len(pcd.points)} punti")
+            print(f"[INFO] load point cloud '{file_path}'")
             self.point_clouds.append(pcd)
         
         return self.point_clouds
     
-    
-    def visualize_point_clouds(self, point_clouds, colors=None, window_name="Point Clouds", 
-                              show_normals=False):
-        """Visualizza multiple point cloud con colori diversi"""
-        if not point_clouds:
-            print("[WARN] Nessuna point cloud da visualizzare.")
-            return
-        
-        vis_pcds = []
-        default_colors = [[1, 0, 0], [0, 0, 1], [0, 1, 0], [1, 1, 0], [1, 0, 1], [0, 1, 1]]
-        
-        for i, pcd in enumerate(point_clouds):
-            vis_pcd = copy.deepcopy(pcd)
-            color = colors[i] if colors and i < len(colors) else default_colors[i % len(default_colors)]
-            vis_pcd.paint_uniform_color(color)
-            vis_pcds.append(vis_pcd)
-        
-        o3d.visualization.draw_geometries(
-            vis_pcds,
-            window_name=window_name,
-            width=1024,
-            height=768,
-            point_show_normal=show_normals
-        )
-    
-    def visualize_filtered_objects(self):
-        """
-        Visualize filtered point clouds from detected_objects_list.
-        """
-        if not self.detected_objects_list:
-            print("[WARN] No detected objects to visualize.")
-            return
-        
-        print(f"[INFO] Visualizing {len(self.detected_objects_list)} filtered objects...")
-        
-        # Convert filtered point clouds to Open3D format
-        o3d_point_clouds = []
-        
-        for obj in self.detected_objects_list:
-            if 'pcl_object' not in obj or not obj['pcl_object']:
-                continue
-            
-            points_3d = obj['pcl_object']
-            
-            # Convert to numpy array
-            if isinstance(points_3d, list):
-                points = np.array([[p['x'], p['y'], p['z']] for p in points_3d])
-            else:
-                continue
-            
-            # Create Open3D PointCloud
-            o3d_pcd = o3d.geometry.PointCloud()
-            o3d_pcd.points = o3d.utility.Vector3dVector(points)
-            o3d_point_clouds.append(o3d_pcd)
-            
-            print(f"[INFO] Object '{obj['label']}' (ID {obj['id']}): {len(points)} points")
-        
-        if o3d_point_clouds:
-            # Visualize all filtered point clouds together
-            self.visualize_point_clouds(
-                o3d_point_clouds,
-                window_name="Filtered Point Clouds",
-                show_normals=False
-            )
-        else:
-            print("[WARN] No valid point clouds to visualize.")
-    
     # == filter function
     def remove_plane_background(self, o3d_pcd, distance_threshold=0.02, ransac_n=3, num_iterations=1000, plane_type='floor'):
 
-        # 1. RANSAC per la segmentazione del piano
+        # 1. RANSAC to segment the plane
         plane_model, inliers = o3d_pcd.segment_plane(
             distance_threshold=distance_threshold,
             ransac_n=ransac_n,
             num_iterations=num_iterations
         )
         
-        # 2. Ottenere gli indici degli outlier (i punti che NON sono sul piano)
-        # L'obiettivo è tenere tutti i punti che non appartengono al piano (l'oggetto).
-        
-        # Crea un set di indici totali
+        # set di indici totali
         all_indices = set(range(len(o3d_pcd.points)))
-        # Crea un set di indici inlier (il piano)
+        # Crea un set di punti nel piano
         inlier_indices = set(inliers)
-        
         # Gli outlier sono la differenza: tutti i punti - punti del piano
         outlier_indices = list(all_indices - inlier_indices)
-        
-        # 3. Estrai la nuvola di punti dei NON-piano (l'oggetto)
+        # Estrai la nuvola di punti 
         pcd_foreground = o3d_pcd.select_by_index(outlier_indices)
-        
-        # *Opzionale: Rimozione dei componenti connessi più piccoli (rumore galleggiante)*
-        # Se la nuvola di punti risultante è ancora troppo grande e include oggetti indesiderati,
-        # si può applicare qui una rimozione dei cluster per tenere solo l'oggetto più grande.
+        # TODO: Rimozione dei componenti connessi più piccoli (rumore galleggiante)*
+            # Se la nuvola di punti risultante è ancora troppo grande e include oggetti indesiderati,
+            # si può applicare qui una rimozione dei cluster per tenere solo l'oggetto più grande.
         
         if len(pcd_foreground.points) > 0:
             with o3d.utility.VerbosityContextManager(o3d.utility.VerbosityLevel.Error):
@@ -205,7 +129,7 @@ class PointCloudManager:
             if len(labels) > 0:
                 # Trova l'etichetta del cluster più grande
                 unique_labels, counts = np.unique(labels, return_counts=True)
-                if unique_labels.size > 0 and unique_labels[0] != -1: # Controlla che ci siano cluster validi
+                if unique_labels.size > 0 and unique_labels[0] != -1: 
                     largest_cluster_label = unique_labels[np.argmax(counts)]
                     
                     # Seleziona solo i punti che appartengono al cluster più grande
@@ -215,12 +139,7 @@ class PointCloudManager:
 
         return pcd_foreground
         
-        
     def clean_and_smooth_point_cloud(self, pcd):
-        """
-        Clean and smooth point cloud. 
-        Accepts both o3d.PointCloud objects and list of point dictionaries.
-        """
         # Convert list of dictionaries to Open3D PointCloud if needed
         if isinstance(pcd, list):
             if not pcd:
@@ -260,4 +179,68 @@ class PointCloudManager:
                     for p in filtered_points]
         
         return pcd_uniform
+    
+    # == Visualizer function
+    def visualize_point_clouds(self, point_clouds, colors=None, window_name="Point Clouds", 
+                              show_normals=False):
+        if not point_clouds:
+            print("[WARN] Nessuna point cloud da visualizzare.")
+            return
+        
+        vis_pcds = []
+        default_colors = [[1, 0, 0], [0, 0, 1], [0, 1, 0], [1, 1, 0], [1, 0, 1], [0, 1, 1]]
+        
+        for i, pcd in enumerate(point_clouds):
+            vis_pcd = copy.deepcopy(pcd)
+            color = colors[i] if colors and i < len(colors) else default_colors[i % len(default_colors)]
+            vis_pcd.paint_uniform_color(color)
+            vis_pcds.append(vis_pcd)
+        
+        o3d.visualization.draw_geometries(
+            vis_pcds,
+            window_name=window_name,
+            width=1024,
+            height=768,
+            point_show_normal=show_normals
+        )
+    
+    def visualize_filtered_objects(self):
+        if not self.detected_objects_list:
+            print("[WARN] No detected objects to visualize.")
+            return
+        
+        print(f"[INFO] Visualizing {len(self.detected_objects_list)} filtered objects...")
+        
+        # Convert filtered point clouds to Open3D format
+        o3d_point_clouds = []
+        
+        for obj in self.detected_objects_list:
+            if 'pcl_object' not in obj or not obj['pcl_object']:
+                continue
+            
+            points_3d = obj['pcl_object']
+            
+            # Convert to numpy array
+            if isinstance(points_3d, list):
+                points = np.array([[p['x'], p['y'], p['z']] for p in points_3d])
+            else:
+                continue
+            
+            # Create Open3D PointCloud
+            o3d_pcd = o3d.geometry.PointCloud()
+            o3d_pcd.points = o3d.utility.Vector3dVector(points)
+            o3d_point_clouds.append(o3d_pcd)
+            
+            print(f"[INFO] Object '{obj['label']}' (ID {obj['id']}): {len(points)} points")
+        
+        if o3d_point_clouds:
+            # Visualize all filtered point clouds together
+            self.visualize_point_clouds(
+                o3d_point_clouds,
+                window_name="Filtered Point Clouds",
+                show_normals=False
+            )
+        else:
+            print("[WARN] No valid point clouds to visualize.")
+    
     
