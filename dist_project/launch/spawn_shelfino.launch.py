@@ -265,7 +265,7 @@ def generate_launch_description():
             parameters=[
                 {'use_sim_time': configs["use_sim_time"]},  # or True, depending on your setup
             ],
-             arguments=['-d',"/home/computer/src/Distributed_project/dist_project/config/overall_map.rviz"]
+             arguments=['-d',os.path.join(dist_project_pkg, 'config', 'overall_map.rviz')]
 
     )]
 
