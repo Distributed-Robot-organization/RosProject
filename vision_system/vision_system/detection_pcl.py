@@ -321,7 +321,6 @@ class ObjectDetectionNode(Node):
     def get_detected_objects(self):
         return self.detected_objects_list
 
-
     # == point cloud part ==
     def trigger_pcl_callback(self, request, response):
         self.get_logger().info('PCL Trigger received!')
