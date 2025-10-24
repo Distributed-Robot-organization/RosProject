@@ -23,27 +23,15 @@ using ComputePathToPose = nav2_msgs::action::ComputePathToPose;
 using GoalHandleComputePath = rclcpp_action::ClientGoalHandle<ComputePathToPose>;
 using GoalHandleFollowPath = rclcpp_action::ClientGoalHandle<FollowPath>;
 
-inline constexpr rmw_qos_profile_t qos_profile_custom1{
-  RMW_QOS_POLICY_HISTORY_KEEP_LAST,
-  10,
-  RMW_QOS_POLICY_RELIABILITY_RELIABLE,
-  RMW_QOS_POLICY_DURABILITY_TRANSIENT_LOCAL,
-  RMW_QOS_DEADLINE_DEFAULT,
-  RMW_QOS_LIFESPAN_DEFAULT,
-  RMW_QOS_POLICY_LIVELINESS_SYSTEM_DEFAULT,
-  RMW_QOS_LIVELINESS_LEASE_DURATION_DEFAULT,
-  false
-};
-
 class PathGenerator : public rclcpp::Node
 {
 public:
   PathGenerator() : Node("random_path_generator"),
                           gen_(std::random_device{}())
   {
-    // Parametri
+    // Parametrs
     this->declare_parameter("max_distance", 5.0);
-    this->declare_parameter("step_size", 0.1);
+    this->declare_parameter("step_size", 0.3);
     this->declare_parameter("frame_id", "map");
     
     max_distance_ = this->get_parameter("max_distance").as_double();
@@ -68,19 +56,19 @@ public:
     // Arc navigation service
     service_arc_ = this->create_service<navigation_system::srv::NavigateArc>(
         "/navigate_arc",
-        std::bind(&PathGenerator::callback_arc, this,
+        std::bind(&PathGenerator::callback_arc_trigger, this,
                   std::placeholders::_1, std::placeholders::_2));
 
     // Pause service
     service_pause_ = this->create_service<std_srvs::srv::Trigger>(
         "/pause_navigation",
-        std::bind(&PathGenerator::callback_pause, this,
+        std::bind(&PathGenerator::callback_pause_trigger, this,
                   std::placeholders::_1, std::placeholders::_2));
 
     // Stop service
     service_stop_ = this->create_service<std_srvs::srv::Trigger>(
         "/stop_navigation",
-        std::bind(&PathGenerator::callback_stop, this,
+        std::bind(&PathGenerator::callback_stop_trigger, this,
                   std::placeholders::_1, std::placeholders::_2));
 
     // Subscription 
@@ -172,7 +160,7 @@ private:
     RCLCPP_INFO(this->get_logger(), "Specific path computation requested.");
   }
 
-  void callback_arc(
+  void callback_arc_trigger(
       const std::shared_ptr<navigation_system::srv::NavigateArc::Request> request,
       std::shared_ptr<navigation_system::srv::NavigateArc::Response> response)
   {
@@ -208,104 +196,113 @@ private:
     response->message = "Arc path generated and navigation started.";
     RCLCPP_INFO(this->get_logger(), "%s", response->message.c_str());
   }
+nav_msgs::msg::Path generate_arch_path(
+    const geometry_msgs::msg::Pose& goal_pose,
+    double radius,
+    const geometry_msgs::msg::Pose& center)
+{
+  nav_msgs::msg::Path path;
+  path.header.frame_id = frame_id_;
+  path.header.stamp = this->now();
 
-  nav_msgs::msg::Path generate_arch_path(
-      const geometry_msgs::msg::Pose& goal_pose,
-      double radius,
-      const geometry_msgs::msg::Pose& center)
-  {
-    nav_msgs::msg::Path path;
-    path.header.frame_id = frame_id_;
-    path.header.stamp = this->now();
+  // Current robot position
+  double robot_x = current_pose_.position.x;
+  double robot_y = current_pose_.position.y;
+  double center_x = center.position.x;
+  double center_y = center.position.y;
 
-    // Current robot position
-    double robot_x = current_pose_.position.x;
-    double robot_y = current_pose_.position.y;
-    double center_x = center.position.x;
-    double center_y = center.position.y;
-
-    // Project robot position onto circle
-    double dx_robot = robot_x - center_x;
-    double dy_robot = robot_y - center_y;
-    double dist_robot = std::sqrt(dx_robot * dx_robot + dy_robot * dy_robot);
-    
-    double start_x, start_y;
-    if (dist_robot > 1e-6) {
-      start_x = center_x + (dx_robot / dist_robot) * radius;
-      start_y = center_y + (dy_robot / dist_robot) * radius;
-    } else {
-      start_x = center_x + radius;
-      start_y = center_y;
-    }
-
-    // Project goal position onto circle
-    double dx_goal = goal_pose.position.x - center_x;
-    double dy_goal = goal_pose.position.y - center_y;
-    double dist_goal = std::sqrt(dx_goal * dx_goal + dy_goal * dy_goal);
-    
-    double end_x, end_y;
-    if (dist_goal > 1e-6) {
-      end_x = center_x + (dx_goal / dist_goal) * radius;
-      end_y = center_y + (dy_goal / dist_goal) * radius;
-    } else {
-      end_x = center_x + radius;
-      end_y = center_y;
-    }
-
-    // Calculate angles
-    double start_angle = std::atan2(start_y - center_y, start_x - center_x);
-    double end_angle = std::atan2(end_y - center_y, end_x - center_x);
-
-    // Choose shortest arc direction
-    double angle_diff = end_angle - start_angle;
-    if (angle_diff > M_PI) {
-      angle_diff -= 2.0 * M_PI;
-    } else if (angle_diff < -M_PI) {
-      angle_diff += 2.0 * M_PI;
-    }
-
-    // Generate waypoints along arc
-    double arc_length = std::abs(angle_diff) * radius;
-    int num_points = std::max(10, static_cast<int>(arc_length / step_size_));
-    
-    for (int i = 0; i <= num_points; ++i) {
-      double t = static_cast<double>(i) / num_points;
-      double current_angle = start_angle + t * angle_diff;
-
-      geometry_msgs::msg::PoseStamped pose;
-      pose.header.frame_id = frame_id_;
-      pose.header.stamp = this->now();
-      
-      pose.pose.position.x = center_x + radius * std::cos(current_angle);
-      pose.pose.position.y = center_y + radius * std::sin(current_angle);
-      pose.pose.position.z = 0.0;
-
-      // Orientation tangent to circle for intermediate points
-      // Last point faces the center
-      double orientation_angle;
-      if (i == num_points) {
-        // Final pose: face toward center
-        orientation_angle = current_angle + M_PI;
-      } else {
-        // Intermediate poses: tangent to circle
-        orientation_angle = current_angle + (angle_diff > 0 ? M_PI/2 : -M_PI/2);
-      }
-      
-      tf2::Quaternion q;
-      q.setRPY(0.0, 0.0, orientation_angle);
-      pose.pose.orientation = tf2::toMsg(q);
-
-      path.poses.push_back(pose);
-    }
-
-    RCLCPP_INFO(this->get_logger(), 
-                "Generated arc path with %zu waypoints (arc length: %.2fm)",
-                path.poses.size(), arc_length);
-
-    return path;
+  // Project robot position onto circle
+  double dx_robot = robot_x - center_x;
+  double dy_robot = robot_y - center_y;
+  double dist_robot = std::sqrt(dx_robot * dx_robot + dy_robot * dy_robot);
+  
+  double start_x, start_y;
+  if (dist_robot > 1e-6) {
+    start_x = center_x + (dx_robot / dist_robot) * radius;
+    start_y = center_y + (dy_robot / dist_robot) * radius;
+  } else {
+    start_x = center_x + radius;
+    start_y = center_y;
   }
 
-  void callback_pause(const std::shared_ptr<std_srvs::srv::Trigger::Request> request,
+  // Project goal position onto circle
+  double dx_goal = goal_pose.position.x - center_x;
+  double dy_goal = goal_pose.position.y - center_y;
+  double dist_goal = std::sqrt(dx_goal * dx_goal + dy_goal * dy_goal);
+  
+  double end_x, end_y;
+  if (dist_goal > 1e-6) {
+    end_x = center_x + (dx_goal / dist_goal) * radius;
+    end_y = center_y + (dy_goal / dist_goal) * radius;
+  } else {
+    end_x = center_x + radius;
+    end_y = center_y;
+  }
+
+  // Calculate angles
+  double start_angle = std::atan2(start_y - center_y, start_x - center_x);
+  double end_angle = std::atan2(end_y - center_y, end_x - center_x);
+
+  // Choose shortest arc direction
+  double angle_diff = end_angle - start_angle;
+  if (angle_diff > M_PI) {
+    angle_diff -= 2.0 * M_PI;
+  } else if (angle_diff < -M_PI) {
+    angle_diff += 2.0 * M_PI;
+  }
+
+  // Generate waypoints along arc
+  double arc_length = std::abs(angle_diff) * radius;
+  int num_points = std::max(10, static_cast<int>(arc_length / step_size_));
+  
+  for (int i = 0; i <= num_points; ++i) {
+    double t = static_cast<double>(i) / num_points;
+    double current_angle = start_angle + t * angle_diff;
+
+    geometry_msgs::msg::PoseStamped pose;
+    pose.header.frame_id = frame_id_;
+    pose.header.stamp = this->now();
+    
+    pose.pose.position.x = center_x + radius * std::cos(current_angle);
+    pose.pose.position.y = center_y + radius * std::sin(current_angle);
+    pose.pose.position.z = 0.0;
+
+    path.poses.push_back(pose);
+  }
+
+  // double linear_distance = radius / 3.0;
+  // int num_linear_points = std::max(5, static_cast<int>(linear_distance / step_size_));
+  // double arc_end_x = end_x;
+  // double arc_end_y = end_y;
+  
+  // // Direzione verso il centro
+  // double dx_to_center = center_x - arc_end_x;
+  // double dy_to_center = center_y - arc_end_y;
+  // double dist_to_center = std::sqrt(dx_to_center * dx_to_center + dy_to_center * dy_to_center);
+  // // Normalizza la direzione
+  // dx_to_center /= dist_to_center;
+  // dy_to_center /= dist_to_center;
+  
+  // for (int i = 1; i <= num_linear_points; ++i) {
+  //   double t = static_cast<double>(i) / num_linear_points;
+    
+  //   geometry_msgs::msg::PoseStamped pose;
+  //   pose.header.frame_id = frame_id_;
+  //   pose.header.stamp = this->now();
+    
+  //   pose.pose.position.x = arc_end_x + t * linear_distance * dx_to_center;
+  //   pose.pose.position.y = arc_end_y + t * linear_distance * dy_to_center;
+  //   pose.pose.position.z = 0.0;    
+  //   path.poses.push_back(pose);
+  // }
+
+  // RCLCPP_INFO(this->get_logger(), 
+  //             "Generated arc path with %zu waypoints (arc: %.2fm, linear: %.2fm)",
+  //             path.poses.size(), arc_length, linear_distance);
+
+  return path;
+}
+  void callback_pause_trigger(const std::shared_ptr<std_srvs::srv::Trigger::Request> request,
                       std::shared_ptr<std_srvs::srv::Trigger::Response> response)
   {
     (void)request;
@@ -339,7 +336,7 @@ private:
     }
   }
 
-  void callback_stop(const std::shared_ptr<std_srvs::srv::Trigger::Request> request,
+  void callback_stop_trigger(const std::shared_ptr<std_srvs::srv::Trigger::Request> request,
                      std::shared_ptr<std_srvs::srv::Trigger::Response> response)
   {
     (void)request;
@@ -454,13 +451,14 @@ private:
     RCLCPP_INFO(this->get_logger(), "Path goal sent to shelfino1.");
   }
 
-  // Membri
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr service_random_pose;
   rclcpp::Service<navigation_system::srv::NavigateToGoal>::SharedPtr service_specific_pose;
   rclcpp::Service<navigation_system::srv::NavigateArc>::SharedPtr service_arc_;
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr service_pause_;
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr service_stop_;
+  
   rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr amcl_sub_;
+
   rclcpp_action::Client<ComputePathToPose>::SharedPtr path_client_;
   rclcpp_action::Client<FollowPath>::SharedPtr action_client_;
   rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr path_pub_;
@@ -474,7 +472,6 @@ private:
 
   std::mt19937 gen_;
 
-  // Pause/Resume state
   bool is_paused_ = false;
   nav_msgs::msg::Path saved_path_;
   std::shared_ptr<GoalHandleFollowPath> current_goal_handle_;
@@ -493,3 +490,4 @@ int main(int argc, char *argv[])
 // ros2 service call /pause_navigation std_srvs/srv/Trigger "{}"
 // ros2 service call /generate_specific_path navigation_system/srv/NavigateToGoal '{pose: {position: {x: 4.0, y: 0.0, z: 0.0}, orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}}}'
 // ros2 service call /navigate_arc navigation_system/srv/NavigateArc "{goal_pose: {position: {x: 5.0, y: 0., z: 0.0}}, radius: 4, center: {position: {x: 0.0, y: 0.0, z: 0.0}}}"
+
