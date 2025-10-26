@@ -31,7 +31,7 @@ endif()
 
 
 install(
-  DIRECTORY launch models script
+  DIRECTORY launch models script ply_filtered ply_detected
   DESTINATION share/${PROJECT_NAME}
 )
 

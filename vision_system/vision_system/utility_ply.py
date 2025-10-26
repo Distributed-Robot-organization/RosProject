@@ -8,18 +8,30 @@ import copy
 
 class PointCloudManager:
     
-    def __init__(self, detected_objects_list=None, point_clouds=None, output_dir="output", voxel_size=0.002):
+    def __init__(self, detected_objects_list=None, point_clouds=None, output_dir=None, 
+                 voxel_size=0.002, robot_namespace="robot"):
         
         
         self.detected_objects_list = detected_objects_list
         self.true_object_pcl = []
         self.point_clouds = point_clouds
+        
+        # Set default output directory with absolute path accessible by rosuser
+        if output_dir is None:
+            # Use ROS workspace directory which rosuser can access
+            output_dir = "/ros2_ws/src/vision_system/ply_detected"
         self.output_dir = output_dir
+        
+        # Directory for filtered point clouds
+        self.filtered_dir = "/ros2_ws/src/vision_system/ply_filtered"
+        
+        self.robot_namespace = robot_namespace
         
         self.voxel_size = voxel_size
         
         
         os.makedirs(self.output_dir, exist_ok=True)
+        os.makedirs(self.filtered_dir, exist_ok=True)
         self.get_3d_points_from_bbox()
     
     def get_3d_points_from_bbox(self):
@@ -44,7 +56,7 @@ class PointCloudManager:
             })
             #print(f"[INFO] object '{label}' (ID {obj_id}) -- relative points {len(points_3d)}")
 
-    def save_object_pointcloud_to_file(self,nick_name="object"):
+    def save_object_pointcloud_to_file(self, nick_name="object"):
         
         if not self.true_object_pcl:
             print(f"[WARN] no object to save for true_object_pcl.")
@@ -60,14 +72,18 @@ class PointCloudManager:
                 print(f"[WARN] no point for object: '{label}' (ID {object_id}).")
                 continue
 
-            filename = os.path.join(self.output_dir, f"{nick_name}_{label}_{object_id}_{timestamp}.ply")
+            # Format: label_robotnamespace_timestamp.ply
+            filename = os.path.join(
+                self.output_dir, 
+                f"{label}_{self.robot_namespace}_{timestamp}.ply"
+            )
 
             try:
                 with open(filename, 'w') as f:
                     # Header PLY
                     f.write("ply\n")
                     f.write("format ascii 1.0\n")
-                    f.write(f"comment object '{label}' (ID {object_id})\n")
+                    f.write(f"comment object '{label}' (ID {object_id}) from robot '{self.robot_namespace}'\n")
                     f.write(f"element vertex {len(points_3d)}\n")
                     f.write("property float x\n")
                     f.write("property float y\n")
