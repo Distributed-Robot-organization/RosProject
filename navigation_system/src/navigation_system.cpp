@@ -28,8 +28,14 @@ using GoalHandleFollowPath = rclcpp_action::ClientGoalHandle<FollowPath>;
 class PathGenerator : public rclcpp::Node
 {
 public:
-  PathGenerator() : Node("random_path_generator"), gen_(std::random_device{}())
+  PathGenerator() : Node("navigation_system_node"), gen_(std::random_device{}())
   {
+    // Declare and get robot namespace parameter
+    this->declare_parameter<std::string>("robot_namespace", "shelfino1");
+    robot_namespace_ = this->get_parameter("robot_namespace").as_string();
+    
+    RCLCPP_INFO(this->get_logger(), "Initializing navigation system for robot: %s", robot_namespace_.c_str());
+
     max_distance_ = 5.0;
     step_size_ = 0.3;
     frame_id_ = "map";
@@ -38,50 +44,50 @@ public:
                    .reliability(rclcpp::ReliabilityPolicy::Reliable)
                    .durability(rclcpp::DurabilityPolicy::TransientLocal);
 
-    // Services
+    // Services - with namespace
     service_random_pose = this->create_service<std_srvs::srv::Trigger>(
-        "/generate_random_path", std::bind(&PathGenerator::callback_random_trigger, this,
+        "/" + robot_namespace_ + "/generate_random_path", std::bind(&PathGenerator::callback_random_trigger, this,
                   std::placeholders::_1, std::placeholders::_2));
 
     service_specific_pose = this->create_service<navigation_system::srv::NavigateToGoal>(
-        "/generate_specific_path", std::bind(&PathGenerator::callback_specific_trigger, this,
+        "/" + robot_namespace_ + "/generate_specific_path", std::bind(&PathGenerator::callback_specific_trigger, this,
                   std::placeholders::_1, std::placeholders::_2));
 
-    service_arc_ = this->create_service<navigation_system::srv::NavigateArc>("/generate_arc", 
+    service_arc_ = this->create_service<navigation_system::srv::NavigateArc>("/" + robot_namespace_ + "/generate_arc", 
         std::bind(&PathGenerator::callback_arch_trigger, this, std::placeholders::_1, std::placeholders::_2));
     
-    service_rotate_to_center_ = this->create_service<std_srvs::srv::Trigger>("/rotate_shelfino",
+    service_rotate_to_center_ = this->create_service<std_srvs::srv::Trigger>("/" + robot_namespace_ + "/rotate_shelfino",
         std::bind(&PathGenerator::callback_rotate_trigger, this, std::placeholders::_1, std::placeholders::_2));
 
-    service_pause_ = this->create_service<std_srvs::srv::Trigger>("/pause_navigation",
+    service_pause_ = this->create_service<std_srvs::srv::Trigger>("/" + robot_namespace_ + "/pause_navigation",
         std::bind(&PathGenerator::callback_pause_trigger, this, std::placeholders::_1, std::placeholders::_2));
 
-    service_stop_ = this->create_service<std_srvs::srv::Trigger>("/stop_navigation",
+    service_stop_ = this->create_service<std_srvs::srv::Trigger>("/" + robot_namespace_ + "/stop_navigation",
         std::bind(&PathGenerator::callback_stop_trigger, this, std::placeholders::_1, std::placeholders::_2));
 
-    // Subscriptions
+    // Subscriptions - with namespace
     amcl_sub_ = this->create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>(
-        "/shelfino1/amcl_pose", qos, std::bind(&PathGenerator::amcl_callback, this, std::placeholders::_1));
+        "/" + robot_namespace_ + "/amcl_pose", qos, std::bind(&PathGenerator::amcl_callback, this, std::placeholders::_1));
     
-    // Publishers
-    path_pub_ = this->create_publisher<nav_msgs::msg::Path>("/shelfino1/planned_path", 10);
-    cmd_vel_pub_ = this->create_publisher<geometry_msgs::msg::Twist>("/shelfino1/cmd_vel", 10);
-    check_reach_goal_pub_ = this->create_publisher<std_msgs::msg::Bool>("/check_reach_goal", 10);
+    // Publishers - with namespace
+    path_pub_ = this->create_publisher<nav_msgs::msg::Path>("/" + robot_namespace_ + "/planned_path", 10);
+    cmd_vel_pub_ = this->create_publisher<geometry_msgs::msg::Twist>("/" + robot_namespace_ + "/cmd_vel", 10);
+    check_reach_goal_pub_ = this->create_publisher<std_msgs::msg::Bool>("/" + robot_namespace_ + "/check_reach_goal", 10);
     
-    // Action clients
-    path_client_ = rclcpp_action::create_client<ComputePathToPose>(this, "/shelfino1/compute_path_to_pose");
-    action_client_ = rclcpp_action::create_client<FollowPath>(this, "/shelfino1/follow_path");
+    // Action clients - with namespace
+    path_client_ = rclcpp_action::create_client<ComputePathToPose>(this, "/" + robot_namespace_ + "/compute_path_to_pose");
+    action_client_ = rclcpp_action::create_client<FollowPath>(this, "/" + robot_namespace_ + "/follow_path");
     
     // Wait for action servers
     if (!path_client_->wait_for_action_server(std::chrono::seconds(10))) {
-      RCLCPP_ERROR(this->get_logger(), "Action server /shelfino1/compute_path_to_pose not available.");
+      RCLCPP_ERROR(this->get_logger(), "Action server /%s/compute_path_to_pose not available.", robot_namespace_.c_str());
     } else {
-      RCLCPP_INFO(this->get_logger(), "Action server /shelfino1/compute_path_to_pose OK.");
+      RCLCPP_INFO(this->get_logger(), "Action server /%s/compute_path_to_pose OK.", robot_namespace_.c_str());
     }
     if (!action_client_->wait_for_action_server(std::chrono::seconds(10))) {
-      RCLCPP_ERROR(this->get_logger(), "Action server /shelfino1/follow_path not available.");
+      RCLCPP_ERROR(this->get_logger(), "Action server /%s/follow_path not available.", robot_namespace_.c_str());
     } else {
-      RCLCPP_INFO(this->get_logger(), "Action server /shelfino1/follow_path OK.");
+      RCLCPP_INFO(this->get_logger(), "Action server /%s/follow_path OK.", robot_namespace_.c_str());
     }
 
     // Timers
@@ -91,7 +97,7 @@ public:
     rotation_timer_ = this->create_wall_timer(std::chrono::milliseconds(50),
         std::bind(&PathGenerator::rotation_control_loop, this));
 
-    RCLCPP_INFO(this->get_logger(), "PathGenerator ready.");
+    RCLCPP_INFO(this->get_logger(), "PathGenerator ready for robot: %s", robot_namespace_.c_str());
   }
 
 private:
@@ -544,6 +550,7 @@ private:
   rclcpp_action::Client<FollowPath>::SharedPtr action_client_;
 
   // State variables
+  std::string robot_namespace_;
   geometry_msgs::msg::Pose current_pose_;
   nav_msgs::msg::Path saved_path_;
   std::shared_ptr<GoalHandleFollowPath> current_goal_handle_;
@@ -574,6 +581,7 @@ int main(int argc, char *argv[])
   return 0;
 }
 
+// old command
 // ros2 service call /stop_navigation std_srvs/srv/Trigger "{}"
 // ros2 service call /pause_navigation std_srvs/srv/Trigger "{}"
 // ros2 service call /rotate_shelfino std_srvs/srv/Trigger "{}"
@@ -581,3 +589,10 @@ int main(int argc, char *argv[])
 // ros2 service call /generate_specific_path navigation_system/srv/NavigateToGoal '{pose: {position: {x: 4.0, y: 0.0, z: 0.0}, orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}}}'
 // ros2 service call /generate_arc navigation_system/srv/NavigateArc "{goal: {x: 4.0, y: 0.0, z: 0.0}, center: {x: 0.0, y: 0.0, z: 0.0}, radius: 4.0}"
 
+// new command
+// ros2 service call /shelfino1/stop_navigation std_srvs/srv/Trigger "{}"
+// ros2 service call /shelfino1/pause_navigation std_srvs/srv/Trigger "{}"
+// ros2 service call /shelfino1/rotate_shelfino std_srvs/s
+// ros2 service call /shelfino1/generate_random_path std_srvs/srv/Trigger "{}"
+// ros2 service call /shelfino1/generate_specific_path navigation_system/srv/NavigateToGoal '{pose: {position: {x: 4.0, y: 0.0, z: 0.0}, orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}}}'
+// ros2 service call /shelfino1/generate_arc navigation_system/srv/NavigateArc "{goal: {x: 4.0, y: 0.0, z: 0.0}, center: {x: 0.0, y: 0.0, z: 0.0}, radius: 4.0}"

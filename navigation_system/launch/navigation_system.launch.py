@@ -1,22 +1,69 @@
 import launch
 import launch_ros
-from launch.actions import TimerAction
+from launch.actions import TimerAction, DeclareLaunchArgument, OpaqueFunction
+from launch.substitutions import LaunchConfiguration
+import yaml
+import os
+from ament_index_python.packages import get_package_share_directory
+
+def load_robot_names(context):
+    """Load robot names from the YAML configuration file."""
+    config_file = LaunchConfiguration('config_file').perform(context)
+    
+    if not os.path.exists(config_file):
+        print(f"Warning !!!! NO NODI PER PIù SHELFINI: Config file not found at {config_file}, using defaults")
+        return ['shelfino1']
+    
+    with open(config_file, 'r') as f:
+        config = yaml.safe_load(f)
+    
+    # Extract robot names from the configuration
+    if '/**' in config and 'ros__parameters' in config['/**']:
+        params = config['/**']['ros__parameters']
+        if 'init_names' in params:
+            return params['init_names']
+    
+    return ['shelfino1']
+
+def generate_navigation_nodes(context):
+    """Generate navigation system nodes for each robot."""
+    robot_names = load_robot_names(context)
+    nodes = []
+    
+    for robot_name in robot_names:
+        node = launch_ros.actions.Node(
+            package='navigation_system',
+            executable='navigation_system_node',
+            name=f'navigation_system_{robot_name}',
+            output='screen',
+            parameters=[{'robot_namespace': robot_name}]
+        )
+        
+        # Wrap each node in a TimerAction for delayed start
+        timed_node = TimerAction(
+            period=0.01,
+            actions=[node]
+        )
+        nodes.append(timed_node)
+    
+    return nodes
 
 def generate_launch_description():
-    navigation_system_node = TimerAction(
-        period=0.01,
-        actions=[
-            launch_ros.actions.Node(
-                package='navigation_system',
-                executable='navigation_system_node',
-                name='navigation_system_node',
-                output='screen'
-            )
-        ]
+    # Get the default config file path
+    dist_project_share = get_package_share_directory('dist_project')
+    default_config_file = os.path.join(dist_project_share, 'config', 'shelfino_params.yaml')
+    
+    # Declare launch arguments
+    config_file_arg = DeclareLaunchArgument(
+        'config_file',
+        default_value=default_config_file,
+        description='Path to the robot configuration YAML file'
     )
-
-    nodes = [
-        navigation_system_node,
-    ]
-
-    return launch.LaunchDescription(nodes)
+    
+    # Use OpaqueFunction to dynamically generate nodes based on config
+    generate_nodes = OpaqueFunction(function=generate_navigation_nodes)
+    
+    return launch.LaunchDescription([
+        config_file_arg,
+        generate_nodes
+    ])
