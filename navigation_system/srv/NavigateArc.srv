@@ -1,6 +1,6 @@
-geometry_msgs/Pose goal_pose
 float64 radius
-geometry_msgs/Pose center
+geometry_msgs/Point center
+geometry_msgs/Point goal
 ---
 bool success
 string message
