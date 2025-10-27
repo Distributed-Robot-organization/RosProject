@@ -7,42 +7,43 @@ from std_srvs.srv import Trigger
 from sensor_msgs.msg import Image, PointCloud2, CameraInfo
 from std_msgs.msg import Header
 import geometry_msgs.msg
-
 import numpy as np
 from cv_bridge import CvBridge
 import cv2
 import tf2_ros
 import tf2_geometry_msgs
-
 from sensor_msgs_py import point_cloud2 as pc2
 from builtin_interfaces.msg import Time as BuiltinTime
 from ultralytics import YOLO
-from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
-
+from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy, HistoryPolicy
 from vision_system.msg import ObjectDetectionBox, ObjectDetectionResult
-from utility_ply import PointCloudManager
+import torch
+import open3d as o3d
+import datetime
+
+try:
+    import cupy as cp
+    CUPY_AVAILABLE = True
+except ImportError:
+    CUPY_AVAILABLE = False
 
 
 class ObjectDetectionNode(Node):
-
     def __init__(self) -> None:
         super().__init__('object_detection_node')
         
-        # Declare namespace parameter first
+        # GPU setup
+        self.cuda_available = torch.cuda.is_available()
+        self.device = 'cuda' if self.cuda_available else 'cpu'
+        if self.cuda_available:
+            self.get_logger().info(f"CUDA available! Using GPU: {torch.cuda.get_device_name(0)}")
+        else:
+            self.get_logger().warn("CUDA not available, using CPU")
+        
+        # Parameters
         self.declare_parameter('robot_namespace', 'shelfino1')
         robot_ns = self.get_parameter('robot_namespace').value
         
-        self.ply_detected_dir = "/ros2_ws/src/vision_system/ply_detected"
-        self.ply_filtered_dir = "/ros2_ws/src/vision_system/ply_filtered"
-        os.makedirs(self.ply_detected_dir, exist_ok=True)
-        os.makedirs(self.ply_filtered_dir, exist_ok=True)
-
-        # Load YOLO model
-        package_share_directory = get_package_share_directory('vision_system')
-        model_path = os.path.join(package_share_directory, 'models', 'best.pt')
-        self.model = YOLO(model_path)
-        
-        # Declare parameters with namespace
         self.declare_parameter('rgb_image_topic', f'/{robot_ns}/f_camera/image_raw')
         self.declare_parameter('depth_image_topic', f'/{robot_ns}/f_camera/depth/image_raw')
         self.declare_parameter('detection_image_topic', f'/{robot_ns}/vision_system/yolo_detection_image')
@@ -50,8 +51,10 @@ class ObjectDetectionNode(Node):
         self.declare_parameter('point_cloud_topic', f'/{robot_ns}/f_camera/points')
         self.declare_parameter('info_camera', f'/{robot_ns}/f_camera/camera_info')
         self.declare_parameter('z_ground_offset', 0.0)
-
-        # Get parameter values
+        self.declare_parameter('use_half_precision', True)
+        self.declare_parameter('yolo_imgsz', 512)
+        self.declare_parameter('voxel_size', 0.01)
+        
         rgb_topic = self.get_parameter('rgb_image_topic').value
         depth_topic = self.get_parameter('depth_image_topic').value
         image_detection_topic = self.get_parameter('detection_image_topic').value
@@ -59,26 +62,44 @@ class ObjectDetectionNode(Node):
         point_cloud_topic = self.get_parameter('point_cloud_topic').value
         camera_info_topic = self.get_parameter('info_camera').value
         self.z_ground_offset = self.get_parameter('z_ground_offset').value
+        self.use_half_precision = self.get_parameter('use_half_precision').value
+        self.yolo_imgsz = self.get_parameter('yolo_imgsz').value
+        self.voxel_size = self.get_parameter('voxel_size').value
         
-        # Store robot namespace and optical frame
+        # Output directories
+        self.ply_detected_dir = "/ros2_ws/src/vision_system/ply_detected"
+        self.ply_filtered_dir = "/ros2_ws/src/vision_system/ply_filtered"
+        os.makedirs(self.ply_detected_dir, exist_ok=True)
+        os.makedirs(self.ply_filtered_dir, exist_ok=True)
+
+        # YOLO model
+        package_share_directory = get_package_share_directory('vision_system')
+        model_path = os.path.join(package_share_directory, 'models', 'best.pt')
+        self.model = YOLO(model_path)
+        if self.cuda_available:
+            self.model.to(self.device)
+        self.get_logger().info(f"YOLO model loaded on {self.device}")
+        
         self.robot_namespace = robot_ns
         self.camera_optical_frame = f"{robot_ns}/frontal_camera_link_optical"
 
-        qos_profile = QoSProfile(
-            reliability=ReliabilityPolicy.RELIABLE,
-            durability=DurabilityPolicy.VOLATILE,
-            depth=20
-        )
+        # QoS profiles
+        qos_sensor = QoSProfile(reliability=ReliabilityPolicy.BEST_EFFORT,
+                               durability=DurabilityPolicy.VOLATILE,
+                               history=HistoryPolicy.KEEP_LAST, depth=1)
+        qos_reliable = QoSProfile(reliability=ReliabilityPolicy.RELIABLE,
+                                 durability=DurabilityPolicy.VOLATILE,
+                                 history=HistoryPolicy.KEEP_LAST, depth=5)
         
-        # Subscribers
-        self.create_subscription(Image, rgb_topic, self.rgb_callback, qos_profile)
-        self.create_subscription(Image, depth_topic, self.depth_callback, qos_profile)
-        self.create_subscription(PointCloud2, point_cloud_topic, self.pointcloud_callback, qos_profile)
-        self.create_subscription(CameraInfo, camera_info_topic, self.camera_info_callback, qos_profile)
+        # Subscriptions
+        self.create_subscription(Image, rgb_topic, self.rgb_callback, qos_sensor)
+        self.create_subscription(Image, depth_topic, self.depth_callback, qos_sensor)
+        self.create_subscription(PointCloud2, point_cloud_topic, self.pointcloud_callback, qos_sensor)
+        self.create_subscription(CameraInfo, camera_info_topic, self.camera_info_callback, qos_reliable)
         
         # Publishers
-        self.image_detetection_pub = self.create_publisher(Image, image_detection_topic, 1)
-        self.detection_res_pub = self.create_publisher(ObjectDetectionResult, detection_results_topic, 1)
+        self.image_publisher = self.create_publisher(Image, image_detection_topic, qos_reliable)
+        self.detection_publisher = self.create_publisher(ObjectDetectionResult, detection_results_topic, qos_reliable)
         
         # Services
         self.create_service(Trigger, 'trigger_detection', self.trigger_detection_callback)
@@ -87,232 +108,82 @@ class ObjectDetectionNode(Node):
         
         # State variables
         self.detection_triggered = False
-        self.pcl_triggered = False
         self.confidence_threshold = 0.5
+        self.detected_objects_list = []
         
-        # TF and transformation
+        # TF setup
         self.tf_broadcaster = tf2_ros.TransformBroadcaster(self)
-        self.tf_buffer = tf2_ros.Buffer()
+        self.tf_buffer = tf2_ros.Buffer(cache_time=rclpy.duration.Duration(seconds=10.0))
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
         
-        # Data storage
+        # Image processing
         self.bridge = CvBridge()
         self.depth_image = None
+        self.depth_image_gpu = None
         self.last_rgb_msg = None
-        self.last_cv_image = None
         self.last_cloud = None
-        self.last_cam_info = None
-        self.detected_objects_list = []
-        self.pcl_manager = PointCloudManager()
+        
+        # Camera intrinsics
+        self.fx = self.fy = 525.0
+        self.cx_optical = self.cy_optical = None
         
         self.get_logger().info(f"Object Detection Node initialized for robot: {robot_ns}")
-        self.get_logger().info(f"PLY detected directory: {self.ply_detected_dir}")
-        self.get_logger().info(f"PLY filtered directory: {self.ply_filtered_dir}")
-        
+        self.get_logger().info("READY TO DETECT FILTER AND SAVE!")
+
+    # === SERVICE CALLBACKS ===
     def trigger_detection_callback(self, request, response):
+        self.get_logger().info('Detection Trigger received!')
+        was_active = self.detection_triggered
         self.detection_triggered = not self.detection_triggered
+        
+        # Extract 3D points when deactivating
+        if was_active and not self.detection_triggered:
+            self.get_logger().info('Detection deactivated - extracting 3D points...')
+            if self.detected_objects_list and self.last_cloud:
+                for obj in self.detected_objects_list:
+                    bbox = obj['bbox']
+                    points_3d = self.extract_3d_points_from_bbox(
+                        self.last_cloud, int(bbox[0]), int(bbox[1]), 
+                        int(bbox[2]), int(bbox[3])
+                    )
+                    
+                    # Add metadata for transformation
+                    for point in points_3d:
+                        point.setdefault('frame_id', self.camera_optical_frame)
+                        if 'timestamp' not in point and self.last_rgb_msg:
+                            point['timestamp'] = self.last_rgb_msg.header.stamp
+                    
+                    # Transform to map frame
+                    obj['points_3d'] = self.transform_points_to_map(points_3d)
+                    self.get_logger().info(f"Object {obj['label']} (ID {obj['id']}): "
+                                         f"Extracted {len(obj['points_3d'])} points")
+        
         response.success = self.detection_triggered
-        response.message = f"Object detection {'activated' if self.detection_triggered else 'deactivated'}"
-        self.get_logger().info(response.message)
+        response.message = f"Detection {'activated' if self.detection_triggered else 'deactivated'}"
         return response
-
-    def camera_info_callback(self, info: CameraInfo) -> None:
-        self.last_cam_info = info
-
-    def depth_callback(self, depth_data: Image) -> None:
-        try:
-            self.depth_image = self.bridge.imgmsg_to_cv2(depth_data, desired_encoding='32FC1')
-        except Exception as e:
-            self.get_logger().error(f"Error converting depth image: {e}")
-
-    def rgb_callback(self, rgb_data: Image) -> None:
-        if not self.detection_triggered:
-            return
-        
-        self.last_rgb_msg = rgb_data
-        self.detected_objects_list.clear()
-        
-        cv_image = self.bridge.imgmsg_to_cv2(rgb_data, "bgr8")
-        self.last_cv_image = cv_image
-        results = self.model(cv_image)
-
-        if not (len(results) > 0 and results[0].boxes is not None):
-            return
-        
-        boxes = results[0].boxes
-        annotated_frame = cv_image.copy()
-        detection_msg = ObjectDetectionResult()
-        detection_msg.header = Header()
-        detection_msg.header.stamp = self.get_clock().now().to_msg()
-        detection_msg.header.frame_id = "object_detection"
-
-        for i, box in enumerate(boxes):
-            conf = float(box.conf[0])
-            if conf < self.confidence_threshold:
-                continue
-            
-            xyxy = box.xyxy[0]
-            cls_id = int(box.cls[0])
-            label = results[0].names[cls_id] if hasattr(results[0], 'names') else str(cls_id)
-
-            x_min, y_min, x_max, y_max = xyxy
-            cx = int((x_min + x_max) / 2.0)
-            cy = int((y_min + y_max) / 2.0)
-
-            # Draw bounding box
-            cv2.rectangle(annotated_frame, (int(x_min), int(y_min)), (int(x_max), int(y_max)), (0, 255, 0), 2)
-            cv2.putText(annotated_frame, f"{label} {conf:.2f}", (int(x_min), int(y_min) - 10),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-            cv2.circle(annotated_frame, (cx, cy), 5, (0, 255, 0), -1)
-            
-            # Get 3D coordinates
-            x_3d, y_3d, z_3d, map_x, map_y, map_z, distance = self.yolo_detection(
-                cx, cy, x_min, y_max, annotated_frame, rgb_data
-            )
-            
-            # Create detection message
-            box_msg = ObjectDetectionBox()
-            box_msg.id = i
-            box_msg.label = label
-            box_msg.confidence = conf
-            box_msg.x_min = float(x_min)
-            box_msg.y_min = float(y_min)
-            box_msg.x_max = float(x_max)
-            box_msg.y_max = float(y_max)
-            box_msg.distance = distance
-            box_msg.world_x = map_x
-            box_msg.world_y = map_y
-            box_msg.world_z = map_z
-            detection_msg.boxes.append(box_msg)
-            
-            # Extract and store point cloud
-            points_3d = self.extract_bbox_pointcloud(int(x_min), int(y_min), int(x_max), int(y_max))
-            
-            detected_objects = {
-                'id': i,
-                'label': label,
-                'confidence': conf,
-                'bbox': [float(x_min), float(y_min), float(x_max), float(y_max)],
-                'distance': distance,
-                'world_coordinates': {'x': map_x, 'y': map_y, 'z': map_z},
-                'pcl_object': points_3d
-            }
-            self.detected_objects_list.append(detected_objects)
-            self.publish_tf(map_x, map_y, map_z, f"{label}_{i}")
-
-        # Publish results
-        if len(detection_msg.boxes) > 0:
-            self.detection_res_pub.publish(detection_msg)
-            annotated_msg = self.bridge.cv2_to_imgmsg(annotated_frame, encoding="bgr8")
-            self.image_detetection_pub.publish(annotated_msg)
-
-    def yolo_detection(self, cx, cy, x_min, y_max, annotated_frame, rgb_data):
-        """Convert pixel coordinates to 3D world coordinates"""
-        x_3d = y_3d = z_3d = map_x = map_y = map_z = 0.0
-        distance = -1.0
-
-        if self.depth_image is None:
-            return x_3d, y_3d, z_3d, map_x, map_y, map_z, distance
-        
-        h, w = self.depth_image.shape
-        if not (0 <= cx < w and 0 <= cy < h):
-            return x_3d, y_3d, z_3d, map_x, map_y, map_z, distance
-        
-        distance = float(self.depth_image[cy, cx])
-        if distance <= 0:
-            return x_3d, y_3d, z_3d, map_x, map_y, map_z, distance
-        
-        # Convert to 3D camera coordinates
-        fx = fy = 525.0
-        cx_optical = w / 2.0
-        cy_optical = h / 2.0
-
-        z_3d = distance
-        x_3d = (cx - cx_optical) * z_3d / fx
-        y_3d = (cy - cy_optical) * z_3d / fy
-
-        cv2.putText(annotated_frame, f"X: {x_3d:.2f}, Y: {y_3d:.2f}, Z: {z_3d:.2f} m",
-                   (int(x_min), int(y_max) + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 2)
-
-        # Transform to map frame
-        try:
-            camera_point = geometry_msgs.msg.PointStamped()
-            camera_point.header.stamp = rgb_data.header.stamp
-            camera_point.header.frame_id = self.camera_optical_frame
-            camera_point.point.x = x_3d
-            camera_point.point.y = y_3d
-            camera_point.point.z = z_3d
-
-            transform = self.tf_buffer.lookup_transform('map', self.camera_optical_frame,
-                                                       rclpy.time.Time())
-            map_point = tf2_geometry_msgs.do_transform_point(camera_point, transform)
-            map_x = map_point.point.x
-            map_y = map_point.point.y
-            map_z = map_point.point.z
-        except Exception as e:
-            self.get_logger().error(f"Transform error: {e}")
-
-        return x_3d, y_3d, z_3d, map_x, map_y, map_z, distance
-
-    def publish_tf(self, x_map: float, y_map: float, z_map: float, object_name: str) -> None:
-        """Publish TF for detected object"""
-        t = geometry_msgs.msg.TransformStamped()
-        t.header.stamp = self.get_clock().now().to_msg()
-        t.header.frame_id = "map"
-        t.child_frame_id = f"{self.robot_namespace}/{object_name}_frame"
-        t.transform.translation.x = x_map
-        t.transform.translation.y = y_map
-        t.transform.translation.z = z_map
-        t.transform.rotation.w = 1.0
-        self.tf_broadcaster.sendTransform(t)
-
-    def get_detected_objects(self):
-        return self.detected_objects_list
 
     def trigger_pcl_callback(self, request, response):
-        """Save point clouds of detected objects"""
-        self.pcl_triggered = not self.pcl_triggered
-        
-        if not self.pcl_triggered:
-            response.success = True
-            response.message = 'PCL saving deactivated'
-            self.get_logger().info(response.message)
-            return response
-        
-        if not self.detected_objects_list:
-            response.success = False
-            response.message = 'No detected objects to save'
-            self.get_logger().warn(response.message)
-            return response
-        
-        try:
-            # Transform points to map frame
+        self.get_logger().info('PCL Trigger received!')
+        if self.detected_objects_list:
             for obj in self.detected_objects_list:
-                if 'pcl_object' in obj and obj['pcl_object']:
-                    obj['pcl_object'] = self.transform_points_to_map(obj['pcl_object'])
-            
-            # Save PLY files
-            self.pcl_manager = PointCloudManager(
-                detected_objects_list=self.detected_objects_list,
-                output_dir=self.ply_detected_dir,
-                robot_namespace=self.robot_namespace
-            )
-            self.pcl_manager.save_object_pointcloud_to_file()
-            
+                points_3d = obj.get('points_3d', [])
+                if points_3d:
+                    self.save_object_pointcloud(self.ply_detected_dir, obj['label'], points_3d, obj['id'])
             response.success = True
-            response.message = f'Saved {len(self.detected_objects_list)} objects to {self.ply_detected_dir}'
-            self.get_logger().info(response.message)
-        except Exception as e:
+            response.message = f'Saved {len(self.detected_objects_list)} objects'
+        else:
             response.success = False
-            response.message = f'Error saving PLY files: {e}'
-            self.get_logger().error(response.message)
-        
+            response.message = 'No objects detected'
         return response
-    
+
     def trigger_filter_pcl_callback(self, request, response):
-        """Filter and clean saved point clouds"""
+        self.get_logger().info('Filter PCL Trigger received!')
         try:
-            self.filtering_step()
+            
+            if self.detected_objects_list:
+                for obj in self.detected_objects_list:
+                    points_3d = obj.get('points_3d', [])
+                    self.filtering_step(points_3d)
             response.success = True
             response.message = 'PCL filtering completed'
         except Exception as e:
@@ -322,132 +193,360 @@ class ObjectDetectionNode(Node):
         
         return response
     
+    # === TOPIC CALLBACKS ===
+    def camera_info_callback(self, info: CameraInfo) -> None:
+        if self.cx_optical is None and len(info.k) >= 5:
+            self.fx, self.fy = info.k[0], info.k[4]
+            self.cx_optical, self.cy_optical = info.k[2], info.k[5]
+
+    def depth_callback(self, depth_data: Image) -> None:
+        try:
+            self.depth_image = self.bridge.imgmsg_to_cv2(depth_data, '32FC1')
+            if self.cuda_available and self.depth_image_gpu is None:
+                if CUPY_AVAILABLE:
+                    self.depth_image_gpu = cp.asarray(self.depth_image)
+                else:
+                    self.depth_image_gpu = torch.from_numpy(self.depth_image).to(self.device)
+        except Exception as e:
+            self.get_logger().error(f"Depth conversion error: {e}")
+
     def pointcloud_callback(self, cloud_msg: PointCloud2) -> None:
         self.last_cloud = cloud_msg
-    
-    def extract_bbox_pointcloud(self, x_min: int, y_min: int, x_max: int, y_max: int) -> list:
-        """Extract 3D points within bounding box from point cloud"""
-        if self.last_cloud is None:
-            return []
+
+    def rgb_callback(self, rgb_data: Image) -> None:
+        if not self.detection_triggered:
+            return
         
-        points_3d = []
+        self.last_rgb_msg = rgb_data
+        self.detected_objects_list.clear()
         
-        # Clamp coordinates to valid range
-        x_min = max(0, min(x_min, self.last_cloud.width - 1))
-        y_min = max(0, min(y_min, self.last_cloud.height - 1))
-        x_max = max(0, min(x_max, self.last_cloud.width - 1))
-        y_max = max(0, min(y_max, self.last_cloud.height - 1))
+        cv_image = self.bridge.imgmsg_to_cv2(rgb_data, "bgr8")
         
-        bbox_area = (x_max - x_min) * (y_max - y_min)
-        cloud_timestamp = self.last_cloud.header.stamp
-        cloud_frame_id = self.last_cloud.header.frame_id
+        # YOLO inference
+        results = self.model(cv_image, device=self.device, imgsz=self.yolo_imgsz,
+                           half=self.use_half_precision and self.cuda_available, verbose=False)
+
+        if not (len(results) > 0 and results[0].boxes is not None):
+            return
         
+        boxes = results[0].boxes
+        annotated_frame = cv_image.copy()
+        detection_msg = ObjectDetectionResult()
+        detection_msg.header = Header(stamp=self.get_clock().now().to_msg(), 
+                                     frame_id="object_detection")
+
+        for i, box in enumerate(boxes):
+            conf = float(box.conf[0])
+            if conf < self.confidence_threshold:
+                continue
+                
+            xyxy = box.xyxy[0]
+            cls_id = int(box.cls[0])
+            label = results[0].names[cls_id] if hasattr(results[0], 'names') else str(cls_id)
+
+            x_min, y_min, x_max, y_max = map(float, xyxy)
+            cx, cy = int((x_min + x_max) / 2), int((y_min + y_max) / 2)
+
+            # Draw detection
+            cv2.rectangle(annotated_frame, (int(x_min), int(y_min)), 
+                         (int(x_max), int(y_max)), (0, 255, 0), 2)
+            cv2.putText(annotated_frame, f"{label} {conf:.2f}", 
+                       (int(x_min), int(y_min) - 10),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+            
+            # Get 3D coordinates
+            x_3d, y_3d, z_3d, map_x, map_y, map_z, distance = self.get_3d_position(
+                cx, cy, x_min, y_max, annotated_frame, rgb_data
+            )
+            
+            # Create message
+            box_msg = ObjectDetectionBox()
+            box_msg.id = i
+            box_msg.label = label
+            box_msg.confidence = conf
+            box_msg.x_min, box_msg.y_min = x_min, y_min
+            box_msg.x_max, box_msg.y_max = x_max, y_max
+            box_msg.distance = distance
+            box_msg.world_x, box_msg.world_y, box_msg.world_z = map_x, map_y, map_z
+            detection_msg.boxes.append(box_msg)
+            
+            # Store object
+            self.detected_objects_list.append({
+                'id': i, 'label': label, 'confidence': conf,
+                'bbox': [x_min, y_min, x_max, y_max],
+                'distance': distance,
+                'world_coordinates': {'x': map_x, 'y': map_y, 'z': map_z},
+                'points_3d': []
+            })
+            
+            self.publish_tf(map_x, map_y, map_z, f"{label}_{i}")
+
+        if detection_msg.boxes:
+            self.detection_publisher.publish(detection_msg)
+            annotated_msg = self.bridge.cv2_to_imgmsg(annotated_frame, "bgr8")
+            self.image_publisher.publish(annotated_msg)
+        self.get_logger().info(" number of detections: " + str(len(detection_msg.boxes)))
+            
+    def get_3d_position(self, cx, cy, x_min, y_max, frame, rgb_data):
+        x_3d = y_3d = z_3d = map_x = map_y = map_z = distance = 0.0
+
+        if self.depth_image is None:
+            return x_3d, y_3d, z_3d, map_x, map_y, map_z, distance
+        
+        h, w = self.depth_image.shape
+        if not (0 <= cx < w and 0 <= cy < h):
+            return x_3d, y_3d, z_3d, map_x, map_y, map_z, distance
+        
+        # Get depth
+        if self.cuda_available and self.depth_image_gpu is not None:
+            distance = float(self.depth_image_gpu[cy, cx].cpu() if not CUPY_AVAILABLE 
+                           else self.depth_image_gpu[cy, cx])
+        else:
+            distance = float(self.depth_image[cy, cx])
+            
+        if distance <= 0:
+            return x_3d, y_3d, z_3d, map_x, map_y, map_z, distance
+        
+        # Convert to 3D
+        cx_opt = self.cx_optical if self.cx_optical else w / 2
+        cy_opt = self.cy_optical if self.cy_optical else h / 2
+        z_3d = distance
+        x_3d = (cx - cx_opt) * z_3d / self.fx
+        y_3d = (cy - cy_opt) * z_3d / self.fy
+
+        cv2.putText(frame, f"X:{x_3d:.2f} Y:{y_3d:.2f} Z:{z_3d:.2f}m",
+                   (int(x_min), int(y_max) + 20), cv2.FONT_HERSHEY_SIMPLEX, 
+                   0.5, (255, 255, 0), 2)
+
+        # Transform to map
         try:
-            if bbox_area < 1000:
-                # Small bbox: iterate pixel by pixel
+            camera_point = geometry_msgs.msg.PointStamped()
+            camera_point.header.stamp = rgb_data.header.stamp
+            camera_point.header.frame_id = self.camera_optical_frame
+            camera_point.point.x, camera_point.point.y, camera_point.point.z = x_3d, y_3d, z_3d
+
+            transform = self.tf_buffer.lookup_transform('map', self.camera_optical_frame,
+                                                       rclpy.time.Time(),
+                                                       timeout=rclpy.duration.Duration(seconds=0.1))
+            map_point = tf2_geometry_msgs.do_transform_point(camera_point, transform)
+            map_x, map_y, map_z = map_point.point.x, map_point.point.y, map_point.point.z
+        except Exception as e:
+            self.get_logger().debug(f"Transform error: {e}")
+
+        return x_3d, y_3d, z_3d, map_x, map_y, map_z, distance
+
+    def publish_tf(self, x_map: float, y_map: float, z_map: float, name: str) -> None:
+        t = geometry_msgs.msg.TransformStamped()
+        t.header.stamp = self.get_clock().now().to_msg()
+        t.header.frame_id = "map"
+        t.child_frame_id = f"{self.robot_namespace}/{name}_frame"
+        t.transform.translation.x, t.transform.translation.y, t.transform.translation.z = x_map, y_map, z_map
+        t.transform.rotation.w = 1.0
+        self.tf_broadcaster.sendTransform(t)
+
+    def extract_3d_points_from_bbox(self, pcl_msg: PointCloud2, x_min: int, y_min: int, 
+                                     x_max: int, y_max: int):
+        try:
+            # Clamp to bounds
+            x_min = max(0, min(x_min, pcl_msg.width - 1))
+            y_min = max(0, min(y_min, pcl_msg.height - 1))
+            x_max = max(0, min(x_max, pcl_msg.width - 1))
+            y_max = max(0, min(y_max, pcl_msg.height - 1))
+            
+            points_3d = []
+            bbox_area = (x_max - x_min) * (y_max - y_min)
+            
+            if bbox_area < 1000: 
                 for y in range(y_min, y_max + 1):
                     for x in range(x_min, x_max + 1):
                         try:
-                            point = next(pc2.read_points(
-                                self.last_cloud, field_names=("x", "y", "z"),
-                                skip_nans=False, uvs=[[x, y]]
-                            ), None)
-                            
-                            if point and len(point) >= 3 and not any(np.isnan(point)):
-                                points_3d.append({
-                                    'x': float(point[0]), 'y': float(point[1]), 'z': float(point[2]),
-                                    'pixel_x': x, 'pixel_y': y,
-                                    'frame_id': cloud_frame_id, 'timestamp': cloud_timestamp
-                                })
-                        except Exception:
+                            for point in pc2.read_points(pcl_msg, field_names=("x", "y", "z"), 
+                                                        skip_nans=False, uvs=[[x, y]]):
+                                if len(point) >= 3 and not any(np.isnan(point)):
+                                    points_3d.append({'x': float(point[0]), 'y': float(point[1]),
+                                                    'z': float(point[2]), 'pixel_x': x, 'pixel_y': y})
+                                break
+                        except:
                             continue
-            else:
-                # Large bbox: load all points and filter
-                all_points = list(pc2.read_points(self.last_cloud, field_names=("x", "y", "z"), skip_nans=True))
-                
-                for i, point in enumerate(all_points):
+            else:  # Large bbox: read all and filter
+                for i, point in enumerate(pc2.read_points(pcl_msg, field_names=("x", "y", "z"), 
+                                                         skip_nans=True)):
                     if len(point) >= 3:
-                        pixel_x = i % self.last_cloud.width
-                        pixel_y = i // self.last_cloud.width
-                        
-                        if x_min <= pixel_x <= x_max and y_min <= pixel_y <= y_max:
-                            points_3d.append({
-                                'x': float(point[0]), 'y': float(point[1]), 'z': float(point[2]),
-                                'pixel_x': pixel_x, 'pixel_y': pixel_y,
-                                'frame_id': cloud_frame_id, 'timestamp': cloud_timestamp
-                            })
+                        px, py = i % pcl_msg.width, i // pcl_msg.width
+                        if x_min <= px <= x_max and y_min <= py <= y_max:
+                            points_3d.append({'x': float(point[0]), 'y': float(point[1]),
+                                            'z': float(point[2]), 'pixel_x': px, 'pixel_y': py})
+            return points_3d
         except Exception as e:
-            self.get_logger().error(f"Error extracting pointcloud: {e}")
-        
-        return points_3d
-
+            self.get_logger().error(f"Point extraction error: {e}")
+            return []
+    
     def transform_points_to_map(self, points_3d: list) -> list:
-        """Transform points from camera frame to map frame"""
         if not points_3d:
             return []
         
         frame_id = points_3d[0].get('frame_id', self.camera_optical_frame)
         timestamp = points_3d[0].get('timestamp')
         
-        # Convert timestamp
-        ros_time = rclpy.time.Time(seconds=timestamp.sec, nanoseconds=timestamp.nanosec) \
-                   if isinstance(timestamp, BuiltinTime) else rclpy.time.Time()
-        
         try:
-            transform = self.tf_buffer.lookup_transform('map', frame_id, ros_time,
-                                                       timeout=rclpy.duration.Duration(seconds=1.0))
+            transform = self.tf_buffer.lookup_transform('map', frame_id, rclpy.time.Time(),
+                                                       timeout=rclpy.duration.Duration(seconds=0.5))
         except Exception as e:
             self.get_logger().error(f"Transform error: {e}")
-            try:
-                # Fallback to current time
-                transform = self.tf_buffer.lookup_transform('map', frame_id, rclpy.time.Time())
-                self.get_logger().warn("Using current time for transform")
-            except Exception as e2:
-                self.get_logger().error(f"Fallback transform failed: {e2}")
-                return points_3d
+            return points_3d
         
-        transformed_points = []
-        
+        transformed = []
         for point in points_3d:
             camera_point = geometry_msgs.msg.PointStamped()
-            camera_point.header.stamp = timestamp if isinstance(timestamp, BuiltinTime) else ros_time.to_msg()
             camera_point.header.frame_id = frame_id
-            camera_point.point.x = point['x']
-            camera_point.point.y = point['y']
-            camera_point.point.z = point['z']
+            if isinstance(timestamp, BuiltinTime):
+                camera_point.header.stamp = timestamp
+            camera_point.point.x, camera_point.point.y, camera_point.point.z = point['x'], point['y'], point['z']
             
             try:
                 map_point = tf2_geometry_msgs.do_transform_point(camera_point, transform)
-                transformed_points.append({
-                    'x': float(map_point.point.x),
-                    'y': float(map_point.point.y),
+                transformed.append({
+                    'x': float(map_point.point.x), 'y': float(map_point.point.y),
                     'z': float(map_point.point.z) + self.z_ground_offset,
-                    'pixel_x': point.get('pixel_x'),
-                    'pixel_y': point.get('pixel_y')
+                    'pixel_x': point.get('pixel_x'), 'pixel_y': point.get('pixel_y')
                 })
-            except Exception as e:
-                self.get_logger().error(f"Error transforming point: {e}")
+            except:
                 continue
-        
-        return transformed_points
+        return transformed
 
-    def filtering_step(self):
-        """Apply filtering and smoothing to point clouds"""
-        if not self.pcl_manager or not hasattr(self.pcl_manager, 'detected_objects_list'):
-            raise ValueError('PCL not initialized')
+    def save_object_pointcloud(self, directory: str, label: str, points_3d: list, obj_id: int):
+        try:
+            if not points_3d:
+                return
+            if directory is None:
+                directory = "/ros2_ws/src/vision_system/ply_detected"
+            
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = os.path.join(directory, f"object_{label}_{obj_id}_{timestamp}.ply")
+            
+            with open(filename, 'w') as f:
+                f.write("ply\nformat ascii 1.0\n")
+                f.write(f"comment Map frame coordinates\n")
+                f.write(f"element vertex {len(points_3d)}\n")
+                f.write("property float x\nproperty float y\nproperty float z\nend_header\n")
+                for p in points_3d:
+                    f.write(f"{p['x']:.6f} {p['y']:.6f} {p['z']:.6f}\n")
+            
+            self.get_logger().info(f"Saved {len(points_3d)} points to {filename}")
+        except Exception as e:
+            self.get_logger().error(f"Save error: {e}")
+
+    def filtering_step(self, points_3d: list):
         
-        if not self.pcl_manager.detected_objects_list:
-            raise ValueError('No detected objects to filter')
+        if not self.detected_objects_list:
+            self.get_logger().warn("No detected objects to filter")
+            return
         
-        for obj in self.pcl_manager.detected_objects_list:
-            if 'pcl_object' in obj and obj['pcl_object']:
-                obj['pcl_object'] = self.pcl_manager.clean_and_smooth_point_cloud(obj['pcl_object'])
+        for obj in self.detected_objects_list:
+            points_3d = obj.get('points_3d', [])
+            if not points_3d:
+                self.get_logger().warn(f"Object {obj['label']} (ID {obj['id']}) has no points to filter")
+                continue
+            
+            self.get_logger().info(f"Filtering point cloud for {obj['label']} (ID {obj['id']}) with {len(points_3d)} points")
+            
+            # Apply filtering and smoothing
+            filtered_points = self.clean_and_smooth_point_cloud(points_3d)
+            
+            if not filtered_points:
+                self.get_logger().warn(f"Filtering resulted in empty point cloud for {obj['label']} (ID {obj['id']})")
+                continue
+            
+            # Update the object with filtered points
+            obj['points_3d'] = filtered_points
+            
+            self.get_logger().info(f"Filtered point cloud: {len(filtered_points)} points remaining")
+            
+            # Save the filtered point cloud
+            self.save_object_pointcloud(self.ply_filtered_dir, f"{obj['label']}_filtered", filtered_points, obj['id'])
+    
+    def clean_and_smooth_point_cloud(self, pcd):
+        # Convert list of dictionaries to Open3D PointCloud if needed
+        if isinstance(pcd, list):
+            if not pcd:
+                print("[WARN] Empty point cloud list.")
+                return []
+            
+            # Extract xyz coordinates from dictionaries
+            points = np.array([[p['x'], p['y'], p['z']] for p in pcd])
+            
+            # Create Open3D PointCloud
+            o3d_pcd = o3d.geometry.PointCloud()
+            o3d_pcd.points = o3d.utility.Vector3dVector(points)
+        elif isinstance(pcd, o3d.geometry.PointCloud):
+            o3d_pcd = pcd
+        else:
+            raise TypeError(f"Unsupported point cloud type: {type(pcd)}")
+        #remove back ground
+        o3d_pcd = self.remove_plane_background(o3d_pcd, distance_threshold=0.03) 
+        # Remove outliers
+        pcd_clean, _ = o3d_pcd.remove_statistical_outlier(nb_neighbors=20, std_ratio=2.0)
         
-        self.pcl_manager.get_3d_points_from_bbox()
+        pcd_uniform = pcd_clean.voxel_down_sample(voxel_size=self.voxel_size)
         
-        # Change output directory to filtered and save
-        self.pcl_manager.output_dir = self.ply_filtered_dir
-        self.pcl_manager.save_object_pointcloud_to_file(nick_name="filtered")
+        # Stima delle normali
+        pcd_uniform.estimate_normals(
+            search_param=o3d.geometry.KDTreeSearchParamHybrid(
+                radius=self.voxel_size * 5, max_nn=30
+            )
+        )
+        # Orienta le normali in modo consistente
+        pcd_uniform.orient_normals_consistent_tangent_plane(30)
+        
+        # Convert back to list format if input was a list
+        if isinstance(pcd, list):
+            filtered_points = np.asarray(pcd_uniform.points)
+            return [{'x': float(p[0]), 'y': float(p[1]), 'z': float(p[2])} 
+                    for p in filtered_points]
+        
+        return pcd_uniform
+    
+    def remove_plane_background(self, o3d_pcd, distance_threshold=0.02, ransac_n=3, num_iterations=1000, plane_type='floor'):
+
+        # 1. RANSAC to segment the plane
+        plane_model, inliers = o3d_pcd.segment_plane(
+            distance_threshold=distance_threshold,
+            ransac_n=ransac_n,
+            num_iterations=num_iterations
+        )
+        # set di indici totali
+        all_indices = set(range(len(o3d_pcd.points)))
+        # Crea un set di punti nel piano
+        inlier_indices = set(inliers)
+        # Gli outlier sono la differenza: tutti i punti - punti del piano
+        outlier_indices = list(all_indices - inlier_indices)
+        # Estrai la nuvola di punti 
+        pcd_foreground = o3d_pcd.select_by_index(outlier_indices)
+        # TODO: Rimozione dei componenti connessi più piccoli (rumore galleggiante)*
+            # Se la nuvola di punti risultante è ancora troppo grande e include oggetti indesiderati,
+            # si può applicare qui una rimozione dei cluster per tenere solo l'oggetto più grande.
+        
+        if len(pcd_foreground.points) > 0:
+            with o3d.utility.VerbosityContextManager(o3d.utility.VerbosityLevel.Error):
+                # Identifica i cluster
+                labels = np.array(pcd_foreground.cluster_dbscan(eps=0.05, min_points=10))
+                
+            if len(labels) > 0:
+                # Trova l'etichetta del cluster più grande
+                unique_labels, counts = np.unique(labels, return_counts=True)
+                if unique_labels.size > 0 and unique_labels[0] != -1: 
+                    largest_cluster_label = unique_labels[np.argmax(counts)]
+                    
+                    # Seleziona solo i punti che appartengono al cluster più grande
+                    pcd_foreground = pcd_foreground.select_by_index(
+                        np.where(labels == largest_cluster_label)[0]
+                    )
+
+        return pcd_foreground
+    def __del__(self):
+        if self.cuda_available:
+            torch.cuda.empty_cache()
+
 
 def main(args=None):
     rclpy.init(args=args)
@@ -458,6 +557,7 @@ def main(args=None):
         pass
     node.destroy_node()
     rclpy.shutdown()
+
 
 if __name__ == '__main__':
     main()
