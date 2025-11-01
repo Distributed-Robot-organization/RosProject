@@ -67,3 +67,21 @@ def generate_launch_description():
         config_file_arg,
         generate_nodes
     ])
+    
+    
+
+#  old command
+#  ros2 service call /stop_navigation std_srvs/srv/Trigger "{}"
+#  ros2 service call /pause_navigation std_srvs/srv/Trigger "{}"
+#  ros2 service call /rotate_shelfino std_srvs/srv/Trigger "{}"
+#  ros2 service call /generate_random_path std_srvs/srv/Trigger "{}"
+#  ros2 service call /generate_specific_path navigation_system/srv/NavigateToGoal '{pose: {position: {x: 4.0, y: 0.0, z: 0.0}, orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}}}'
+#  ros2 service call /generate_arc navigation_system/srv/NavigateArc "{goal: {x: 4.0, y: 0.0, z: 0.0}, center: {x: 0.0, y: 0.0, z: 0.0}, radius: 4.0}"
+  
+#  new command
+#  ros2 service call /shelfino1/stop_navigation std_srvs/srv/Trigger "{}"
+#  ros2 service call /shelfino1/pause_navigation std_srvs/srv/Trigger "{}"
+#  ros2 service call /shelfino1/rotate_shelfino std_srvs/srv/Trigger "{}"
+#  ros2 service call /shelfino1/generate_random_path std_srvs/srv/Trigger "{}"
+#  ros2 service call /shelfino1/generate_specific_path navigation_system/srv/NavigateToGoal '{pose: {position: {x: 4.0, y: 0.0, z: 0.0}, orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}}}'
+#  ros2 service call /shelfino1/generate_arc navigation_system/srv/NavigateArc "{goal: {x: 4.0, y: 0.0, z: 0.0}, center: {x: 0.0, y: 0.0, z: 0.0}, radius: 4.0}"
