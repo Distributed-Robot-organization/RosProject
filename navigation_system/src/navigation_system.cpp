@@ -19,6 +19,7 @@
 
 #include "navigation_system/srv/navigate_to_goal.hpp"
 #include "navigation_system/srv/navigate_arc.hpp"
+#include "navigation_system/srv/center_point.hpp"
 
 using FollowPath = nav2_msgs::action::FollowPath;
 using ComputePathToPose = nav2_msgs::action::ComputePathToPose;
@@ -55,9 +56,9 @@ public:
 
     service_arc_ = this->create_service<navigation_system::srv::NavigateArc>("/" + robot_namespace_ + "/generate_arc", 
         std::bind(&PathGenerator::callback_arch_trigger, this, std::placeholders::_1, std::placeholders::_2));
-    
-    service_rotate_to_center_ = this->create_service<std_srvs::srv::Trigger>("/" + robot_namespace_ + "/rotate_shelfino",
-        std::bind(&PathGenerator::callback_rotate_trigger, this, std::placeholders::_1, std::placeholders::_2));
+
+    service_rotate_to_center_ = this->create_service<navigation_system::srv::CenterPoint>("/" + robot_namespace_ + "/rotate_shelfino",std::bind(&PathGenerator::callback_rotate_trigger, this,
+        std::placeholders::_1, std::placeholders::_2));
 
     service_pause_ = this->create_service<std_srvs::srv::Trigger>("/" + robot_namespace_ + "/pause_navigation",
         std::bind(&PathGenerator::callback_pause_trigger, this, std::placeholders::_1, std::placeholders::_2));
@@ -213,9 +214,10 @@ private:
   }
 
   void callback_rotate_trigger(
-      const std::shared_ptr<std_srvs::srv::Trigger::Request> request,
-      std::shared_ptr<std_srvs::srv::Trigger::Response> response)
-  {
+    
+    const std::shared_ptr<navigation_system::srv::CenterPoint::Request> request,
+    std::shared_ptr<navigation_system::srv::CenterPoint::Response> response)
+{
     (void)request;
     
     if (!has_pose_) {
@@ -226,8 +228,8 @@ private:
     }
 
     // Centro del campo
-    double center_x = 0.0;
-    double center_y = 20.0;
+    double center_x = request->center.x;
+    double center_y = request->center.y;
     
     // Calcola l'angolo verso il centro
     double dx = center_x - current_pose_.position.x;
@@ -535,7 +537,7 @@ private:
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr service_random_pose;
   rclcpp::Service<navigation_system::srv::NavigateToGoal>::SharedPtr service_specific_pose;
   rclcpp::Service<navigation_system::srv::NavigateArc>::SharedPtr service_arc_;
-  rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr service_rotate_to_center_;
+  rclcpp::Service<navigation_system::srv::CenterPoint>::SharedPtr service_rotate_to_center_;
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr service_pause_;
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr service_stop_;
   
