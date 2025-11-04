@@ -7,6 +7,8 @@ endif()
 
 # find dependencies
 find_package(ament_cmake REQUIRED)
+find_package(ament_cmake_python REQUIRED)  
+find_package(rclpy REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(visualization_msgs REQUIRED)
@@ -23,9 +25,7 @@ find_package(pcl_ros REQUIRED)
 find_package(interfaces_pkg REQUIRED)
 find_package(dist_project REQUIRED)
 
-# uncomment the following section in order to fill in
-# further dependencies manually.
-# find_package(<dependency> REQUIRED)
+
 
 find_package(Boost 1.74)
 
@@ -39,16 +39,11 @@ include_directories(${PCL_INCLUDE_DIRS})
 link_directories(${PCL_LIBRARY_DIRS})
 add_definitions(${PCL_DEFINITIONS})
 
-
-#<<<< Server Node ---
 add_executable(server_node 
   src/server_node.cpp
   src/cloud_to_voxel.cpp
   src/publishers.cpp
   src/robot_manager.cpp)
-# target_link_libraries(server_node
-#   interfaces_lib
-# )
 
 
 
@@ -88,8 +83,16 @@ if(BUILD_TESTING)
   ament_lint_auto_find_test_dependencies()
 endif()
 
+
 install(DIRECTORY
   launch
-  DESTINATION share/${PROJECT_NAME})
-  
+  DESTINATION share/${PROJECT_NAME}
+)
+install(PROGRAMS
+  coordination/coordinator.py
+  DESTINATION lib/${PROJECT_NAME}
+)
+
+ament_python_install_package(${PROJECT_NAME})
+
 ament_package()
