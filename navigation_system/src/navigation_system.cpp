@@ -73,7 +73,7 @@ public:
     // Publishers - with namespace
     path_pub_ = this->create_publisher<nav_msgs::msg::Path>("/" + robot_namespace_ + "/planned_path", 10);
     cmd_vel_pub_ = this->create_publisher<geometry_msgs::msg::Twist>("/" + robot_namespace_ + "/cmd_vel", 10);
-    check_reach_goal_pub_ = this->create_publisher<std_msgs::msg::Bool>("/" + robot_namespace_ + "/check_reach_goal", 10);
+    tick_service_navigation_pub = this->create_publisher<std_msgs::msg::Bool>("/" + robot_namespace_ + "/navigation_system/tick_service_navigation", 10);
     
     // Action clients - with namespace
     path_client_ = rclcpp_action::create_client<ComputePathToPose>(this, "/" + robot_namespace_ + "/compute_path_to_pose");
@@ -267,7 +267,7 @@ private:
       // Publish goal reached status
       std_msgs::msg::Bool msg;
       msg.data = true;
-      check_reach_goal_pub_->publish(msg);
+      tick_service_navigation_pub->publish(msg);
       return;
     }
     
@@ -427,7 +427,7 @@ private:
       // Publish goal reached status
       std_msgs::msg::Bool msg;
       msg.data = true;
-      check_reach_goal_pub_->publish(msg);
+      tick_service_navigation_pub->publish(msg);
       
       if (current_goal_handle_) {
         auto cancel_future = action_client_->async_cancel_goal(current_goal_handle_);
@@ -502,7 +502,7 @@ private:
           // Publish goal completed status
           std_msgs::msg::Bool msg;
           msg.data = true;
-          check_reach_goal_pub_->publish(msg);
+          tick_service_navigation_pub->publish(msg);
           
           current_goal_handle_.reset();
           saved_path_.poses.clear();
@@ -545,7 +545,7 @@ private:
   rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr amcl_sub_;
   rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr path_pub_;
   rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_pub_;
-  rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr check_reach_goal_pub_;
+  rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr tick_service_navigation_pub;
 
   // Action clients
   rclcpp_action::Client<ComputePathToPose>::SharedPtr path_client_;
