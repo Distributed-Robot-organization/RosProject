@@ -17,9 +17,11 @@ from builtin_interfaces.msg import Time as BuiltinTime
 from ultralytics import YOLO
 from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy, HistoryPolicy
 from vision_system.msg import ObjectDetectionBox, ObjectDetectionResult
+from vision_system.srv import NameObject
 import torch
 import open3d as o3d
 import datetime
+from std_msgs.msg import Bool
 
 try:
     import cupy as cp
@@ -67,8 +69,8 @@ class ObjectDetectionNode(Node):
         self.voxel_size = self.get_parameter('voxel_size').value
         
         # Output directories
-        self.ply_detected_dir = "/ros2_ws/src/vision_system/ply_detected"
-        self.ply_filtered_dir = "/ros2_ws/src/vision_system/ply_filtered"
+        self.ply_detected_dir = "/ros2_ws/src/working_directory/point_cloud/raw_ply"
+        self.ply_filtered_dir = "/ros2_ws/src/working_directory/point_cloud/filtered_ply"
         os.makedirs(self.ply_detected_dir, exist_ok=True)
         os.makedirs(self.ply_filtered_dir, exist_ok=True)
 
@@ -100,16 +102,21 @@ class ObjectDetectionNode(Node):
         # Publishers
         self.image_publisher = self.create_publisher(Image, image_detection_topic, qos_reliable)
         self.detection_publisher = self.create_publisher(ObjectDetectionResult, detection_results_topic, qos_reliable)
+        self.tick_service_vision_publisher = self.create_publisher(Bool, f'/{robot_ns}/vision_system/tick_service_vision', 10)
+
         
         # Services
-        self.create_service(Trigger, 'trigger_detection', self.trigger_detection_callback)
+        self.create_service(NameObject, 'trigger_detection', self.trigger_detection_callback)
         self.create_service(Trigger, 'trigger_pcl', self.trigger_pcl_callback)
         self.create_service(Trigger, 'trigger_filter_pcl', self.trigger_filter_pcl_callback)
         
         # State variables
         self.detection_triggered = False
+        self.target_object_name = None  
         self.confidence_threshold = 0.5
         self.detected_objects_list = []
+        self.detection_timer = None  # Timer per continuare detection
+        self.detection_duration = 3.0  # tempo dal primo rilevamento
         
         # TF setup
         self.tf_broadcaster = tf2_ros.TransformBroadcaster(self)
@@ -132,34 +139,62 @@ class ObjectDetectionNode(Node):
 
     # === SERVICE CALLBACKS ===
     def trigger_detection_callback(self, request, response):
-        self.get_logger().info('Detection Trigger received!')
-        was_active = self.detection_triggered
-        self.detection_triggered = not self.detection_triggered
+        object_name = request.name_object.strip()
         
-        # Extract 3D points when deactivating
-        if was_active and not self.detection_triggered:
-            self.get_logger().info('Detection deactivated - extracting 3D points...')
-            if self.detected_objects_list and self.last_cloud:
-                for obj in self.detected_objects_list:
-                    bbox = obj['bbox']
-                    points_3d = self.extract_3d_points_from_bbox(
-                        self.last_cloud, int(bbox[0]), int(bbox[1]), 
-                        int(bbox[2]), int(bbox[3])
-                    )
+        if not object_name:
+            if self.detection_triggered:
+                self.get_logger().info('Detection deactivated - extracting 3D points...')
+                # Extract 3D points when deactivating
+                if self.detected_objects_list and self.last_cloud:
+                    for obj in self.detected_objects_list:
+                        bbox = obj['bbox']
+                        points_3d = self.extract_3d_points_from_bbox(
+                            self.last_cloud, int(bbox[0]), int(bbox[1]), 
+                            int(bbox[2]), int(bbox[3])
+                        )
+                        
+                        # Add metadata for transformation
+                        for point in points_3d:
+                            point.setdefault('frame_id', self.camera_optical_frame)
+                            if 'timestamp' not in point and self.last_rgb_msg:
+                                point['timestamp'] = self.last_rgb_msg.header.stamp
                     
-                    # Add metadata for transformation
-                    for point in points_3d:
-                        point.setdefault('frame_id', self.camera_optical_frame)
-                        if 'timestamp' not in point and self.last_rgb_msg:
-                            point['timestamp'] = self.last_rgb_msg.header.stamp
-                    
-                    # Transform to map frame
-                    obj['points_3d'] = self.transform_points_to_map(points_3d)
-                    self.get_logger().info(f"Object {obj['label']} (ID {obj['id']}): "
-                                         f"Extracted {len(obj['points_3d'])} points")
+                        # Transform to map frame
+                        obj['points_3d'] = self.transform_points_to_map(points_3d)
+                        self.get_logger().info(f"Object {obj['label']} (ID {obj['id']}): "
+                                             f"Extracted {len(obj['points_3d'])} points")
+                
+                self.detection_triggered = False
+                self.target_object_name = None
+                response.success = True
+                response.message = 'Detection deactivated'
+                
+                done_msg = Bool()
+                done_msg.data = True
+                self.tick_service_vision_publisher.publish(done_msg)
+                self.get_logger().info("Detection deactivated, Published tick_service_vision = True")
+
+                
+            else:
+                response.success = False
+                response.message = 'Detection was already inactive. Provide an object name to start detection.'
+            
+            return response
         
-        response.success = self.detection_triggered
-        response.message = f"Detection {'activated' if self.detection_triggered else 'deactivated'}"
+        # Starting detection with specified object name
+        self.get_logger().info(f'Detection triggered for object: {object_name}')
+        self.detection_triggered = True
+        self.target_object_name = object_name.lower()  # Store as lowercase for case-insensitive matching
+        self.detected_objects_list.clear()
+        
+        response.success = True
+        response.message = f"Detection activated for object: {object_name}"
+
+        done_msg = Bool()
+        done_msg.data = True
+        self.tick_service_vision_publisher.publish(done_msg)
+        self.get_logger().info("Detection activated, Published tick_service_vision = True")
+
         return response
 
     def trigger_pcl_callback(self, request, response):
@@ -171,6 +206,11 @@ class ObjectDetectionNode(Node):
                     self.save_object_pointcloud(self.ply_detected_dir, obj['label'], points_3d, obj['id'])
             response.success = True
             response.message = f'Saved {len(self.detected_objects_list)} objects'
+            
+            done_msg = Bool()
+            done_msg.data = True
+            self.tick_service_vision_publisher.publish(done_msg)
+            self.get_logger().info("Service raw PCL, Published tick_service_vision = True")
         else:
             response.success = False
             response.message = 'No objects detected'
@@ -186,6 +226,12 @@ class ObjectDetectionNode(Node):
                     self.filtering_step(points_3d)
             response.success = True
             response.message = 'PCL filtering completed'
+            
+            done_msg = Bool()
+            done_msg.data = True
+            self.tick_service_vision_publisher.publish(done_msg)
+            self.get_logger().info(" service pcl filter,Published tick_service_vision = True")
+
         except Exception as e:
             response.success = False
             response.message = f'PCL filtering failed: {e}'
@@ -234,6 +280,7 @@ class ObjectDetectionNode(Node):
         detection_msg = ObjectDetectionResult()
         detection_msg.header = Header(stamp=self.get_clock().now().to_msg(), 
                                      frame_id="object_detection")
+        objects_found = False 
 
         for i, box in enumerate(boxes):
             conf = float(box.conf[0])
@@ -243,6 +290,16 @@ class ObjectDetectionNode(Node):
             xyxy = box.xyxy[0]
             cls_id = int(box.cls[0])
             label = results[0].names[cls_id] if hasattr(results[0], 'names') else str(cls_id)
+
+            # Filter by target object name if specified
+            if self.target_object_name and label.lower() != self.target_object_name:
+                continue
+            
+            objects_found = True
+            # timer to close after 3s
+            if self.detection_triggered and self.detection_timer is None:
+                self.get_logger().info("First detection, starting 3s timer to stop detection...")
+                self.detection_timer = self.create_timer(self.detection_duration, self.stop_detection_callback)
 
             x_min, y_min, x_max, y_max = map(float, xyxy)
             cx, cy = int((x_min + x_max) / 2), int((y_min + y_max) / 2)
@@ -285,8 +342,29 @@ class ObjectDetectionNode(Node):
             self.detection_publisher.publish(detection_msg)
             annotated_msg = self.bridge.cv2_to_imgmsg(annotated_frame, "bgr8")
             self.image_publisher.publish(annotated_msg)
-        self.get_logger().info(" number of detections: " + str(len(detection_msg.boxes)))
+            self.get_logger().info(f"Detected {len(detection_msg.boxes)} instances of '{self.target_object_name}'")
+       
+    def stop_detection_callback(self):
+        self.get_logger().info("Stop detection timer end")
+
+        if self.detection_timer is not None:
+            self.detection_timer.cancel()
+            self.detection_timer = None
+
+        if self.detection_triggered:
+            # Create a fake request to trigger the service callback
+            from vision_system.srv import NameObject
+            fake_request = NameObject.Request()
+            fake_request.name_object = "" 
+            fake_response = NameObject.Response()
             
+            # Call the service callback directly
+            self.trigger_detection_callback(fake_request, fake_response)
+        
+            self.get_logger().info(f"Detection stopped: {fake_response.message}")
+            
+
+     
     def get_3d_position(self, cx, cy, x_min, y_max, frame, rgb_data):
         x_3d = y_3d = z_3d = map_x = map_y = map_z = distance = 0.0
 
@@ -417,9 +495,10 @@ class ObjectDetectionNode(Node):
     def save_object_pointcloud(self, directory: str, label: str, points_3d: list, obj_id: int):
         try:
             if not points_3d:
+                self.get_logger().info(f"VECCHIO NON STO SALVANDO NULLA")
                 return
             if directory is None:
-                directory = "/ros2_ws/src/vision_system/ply_detected"
+                directory = "/ros2_ws/src/working_directory/point_cloud/raw_ply"
             
             timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = os.path.join(directory, f"object_{label}_{obj_id}_{timestamp}.ply")

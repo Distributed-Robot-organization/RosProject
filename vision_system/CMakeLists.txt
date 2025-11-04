@@ -16,6 +16,7 @@ find_package(rosidl_default_generators REQUIRED)
 find_package(builtin_interfaces REQUIRED)
 find_package(rclpy REQUIRED)
 find_package(cv_bridge REQUIRED)
+find_package(std_srvs REQUIRED)
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
@@ -29,15 +30,15 @@ if(BUILD_TESTING)
   ament_lint_auto_find_test_dependencies()
 endif()
 
-
 install(
-  DIRECTORY launch models script ply_filtered ply_detected
+  DIRECTORY launch models script
   DESTINATION share/${PROJECT_NAME}
 )
 
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/ObjectDetectionResult.msg"
   "msg/ObjectDetectionBox.msg"
+  "srv/NameObject.srv"
   DEPENDENCIES builtin_interfaces std_msgs
 )
 install(PROGRAMS

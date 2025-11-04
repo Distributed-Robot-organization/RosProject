@@ -62,8 +62,8 @@ def generate_launch_description():
     
 #   ros2 run teleop_twist_keyboard teleop_twist_keyboard cmd_vel:=/shelfino1/cmd_vel
 
-#   ros2 service call /shelfino1/trigger_detection std_srvs/srv/Trigger "{}"
-#   ros2 service call /pollo/trigger_detection std_srvs/srv/Trigger "{}"
+#   ros2 service call /shelfino1/trigger_detection vision_system/srv/NameObject "{name_object: 'small_cone'}"
+#   ros2 service call /shelfino1/trigger_detection vision_system/srv/NameObject "{name_object: ''}" --> to deactivate
 
 #   ros2 service call /shelfino1/trigger_pcl std_srvs/srv/Trigger "{}"
 #   ros2 service call /pollo/trigger_pcl std_srvs/srv/Trigger "{}"
