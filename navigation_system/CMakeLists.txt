@@ -42,18 +42,8 @@ rosidl_generate_interfaces(${PROJECT_NAME}
 )
 
 add_executable(navigation_system_node src/navigation_system.cpp)
-add_executable(arc_node src/arc_node.cpp)
 
-ament_target_dependencies(arc_node
-  rclcpp
-  geometry_msgs
-  nav_msgs
-  tf2
-  tf2_ros
-  tf2_geometry_msgs
-  nav2_msgs
-  std_srvs
-)
+
 
 ament_target_dependencies(navigation_system_node
   rclcpp
@@ -71,11 +61,10 @@ rosidl_get_typesupport_target(cpp_typesupport_target
   ${PROJECT_NAME} rosidl_typesupport_cpp)
 
 target_link_libraries(navigation_system_node "${cpp_typesupport_target}")
-target_link_libraries(arc_node "${cpp_typesupport_target}")
+
 
 install(TARGETS
   navigation_system_node
-  arc_node
   DESTINATION lib/${PROJECT_NAME}
 )
 
