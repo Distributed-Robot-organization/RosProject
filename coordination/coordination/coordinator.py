@@ -10,15 +10,29 @@ from std_srvs.srv import Trigger
 from geometry_msgs.msg import Pose, PoseArray
 from coordination.recostruction import PointCloudProcessor
 
-
+import sys, yaml
+from geometry_msgs.msg import PoseWithCovarianceStamped
 class CoordinatorPcl(Node):
     def __init__(self):
         super().__init__("coordinator_node")
-
+        # PARAMTERS
         # where .ply files are located
         self.ply_directory = "/ros2_ws/src/working_directory/point_cloud/filtered_ply"
         # where to save processed .ply files --> in mesh folder save also the .ply and the mesh files
-        self.ply_save_directory = "/ros2_ws/src/working_directory/point_cloud/mesh"
+        self.ply_save_directory = "/ros2_ws/src/working_directory/mesh"
+
+        self.declare_parameter("robot_namespaces", ["shelfino1"])
+        self.robot_namespaces = self.get_parameter("robot_namespaces").value
+        self.get_logger().info(f"Robots found: {self.robot_namespaces}")
+        
+        self.robot_poses = {}
+        
+        # PUBLISHERS SUBSCRIBERS AND SERVICES
+        for ns in self.robot_namespaces:
+            self.robot_poses[ns] = None
+            self.create_subscription(PoseWithCovarianceStamped,f"/{ns}/amcl_pose",lambda msg, ns=ns: self.pose_callback(msg, ns),
+        10
+        )
         
         self.next_array_pose = self.create_publisher(PoseArray, "next_array_pose", 10)
         
@@ -33,7 +47,6 @@ class CoordinatorPcl(Node):
             "visualize_raw_ply_files",
             self.visualize_raw_ply_callback,
         )
-
         
         self.ply_files = glob.glob(os.path.join(self.ply_directory, "*.ply"))
         
@@ -43,13 +56,20 @@ class CoordinatorPcl(Node):
         )
         
         self.get_logger().info("CoordinatorPcl node started")
+        
+    def pose_callback(self,msg, namespace):
+        pose = msg.pose.pose
+        self.robot_poses[namespace] = pose
+        self.get_logger().info(f"Received pose from {namespace}: {pose.position.x}, {pose.position.y}, {pose.position.z}, {pose.orientation.x}, {pose.orientation.y}, {pose.orientation.z}, {pose.orientation.w}")
+        return pose
 
     def trigger_coordination_next_pose_callback(self, request, response):
         self.get_logger().info("Trigger service called, running full pipeline")
         
-        try:
+        try:   
+            
             # Run full pipeline
-            self.processor.full_pipeline()
+            self.processor.full_pipeline(self.robot_poses)
             
             cluster_centroids = []
             for cluster in self.processor.clusters:

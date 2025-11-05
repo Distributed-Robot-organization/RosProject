@@ -18,7 +18,7 @@ class PointCloudProcessor:
     CONSENSUS_ITERS = 3
     CONSENSUS_ALPHA = 0.5
 
-    def __init__(self, ply_directory: str, ply_save_directory: str):
+    def __init__(self, ply_directory: str, ply_save_directory: str, robot_poses=None):
         
         self.ply_directory = Path(ply_directory)
         self.ply_save_directory = Path(ply_save_directory)
@@ -36,6 +36,16 @@ class PointCloudProcessor:
         self.box_info = []
         self.clusters = []
         self.global_centroid = None
+        if robot_poses is None:
+            # Robot configs --> ora da sistemare le pose dei robot
+            self.robot_pose = [
+                {'position': np.array([0., 16., 0.05]), 'yaw': 1.5708, 'name': 'shelfino1'},
+                {'position': np.array([0., 24.0, 0.05]), 'yaw': -1.5708, 'name': 'pollo'},
+                {'position': np.array([4., 20.0, 0.05]), 'yaw': 3.14, 'name': 'mario'},
+            ]  
+        else:
+            self.robot_pose = robot_poses
+            
         
     def load_ply_files(self):
         cloud_list = []
@@ -173,7 +183,7 @@ class PointCloudProcessor:
                 unknown_boxes.append(box)
         return empty_boxes, occupied_boxes, unknown_boxes
     
-    def color_boxes_by_density(self, occupied_boxes, threshold_percentile=30):
+    def color_boxes_by_density(self, occupied_boxes, threshold_percentile=10):
         if not occupied_boxes: return [], []
         points_counts = [box['points_count'] for box in occupied_boxes]
         threshold = np.percentile(points_counts, threshold_percentile)
@@ -239,7 +249,7 @@ class PointCloudProcessor:
                     box['bbox'].color = color
                 
                 # Sfera al centroide
-                sphere = o3d.geometry.TriangleMesh.create_sphere(radius=box_size*0.5)
+                sphere = o3d.geometry.TriangleMesh.create_sphere(radius=box_size*0.2)
                 sphere.paint_uniform_color(color)
                 sphere.translate(c['centroid'])
                 geometries.append(sphere)
@@ -277,8 +287,8 @@ class PointCloudProcessor:
         self.global_centroid = np.mean(points, axis=0)
         print(f"\nGlobal centroid: [{self.global_centroid[0]:.3f}, {self.global_centroid[1]:.3f}, {self.global_centroid[2]:.3f}]")
         
-        sphere = o3d.geometry.TriangleMesh.create_sphere(radius=box_size * 0.8)
-        sphere.paint_uniform_color([1, 0, 1])
+        sphere = o3d.geometry.TriangleMesh.create_sphere(radius=box_size * 0.3)
+        sphere.paint_uniform_color([1, 1, 1])
         sphere.translate(self.global_centroid)
         frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=box_size * 3)
         frame.translate(self.global_centroid)
@@ -308,13 +318,13 @@ class PointCloudProcessor:
             geom.translate(position)
         return [robot_body, frame, arrow]
     
-    def multi_robot_bayesian_mapping(self, robot_configs, T=3, box_size=0.1):
+    def multi_robot_bayesian_mapping(self, T=3, box_size=0.1):
         print("\n=== Multi-robot Bayesian mapping ===")
         grid_dims, _ = self.create_uniform_grid_boxes(box_size)
         
         # Initialize robot boxes
         robots_boxes = []
-        for _ in robot_configs:
+        for _ in self.robot_pose:
             robot_boxes = [copy.deepcopy({**b, 'log_odds': self.L_PRIOR, 'observations': 0, 
                                          'hit_by_ray': False, 'has_points': False, 'points_count': 0}) 
                           for b in self.box_info]
@@ -329,7 +339,7 @@ class PointCloudProcessor:
                     b['has_points'] = False
                     b['points_count'] = 0
             
-            for i, (robot_boxes, config) in enumerate(zip(robots_boxes, robot_configs)):
+            for i, (robot_boxes, config) in enumerate(zip(robots_boxes, self.robot_pose)):
                 self.check_boxes_with_points(robot_boxes)
                 hits = self.raycast_from_robot(config['position'], config['yaw'], robot_boxes)
                 print(f"Robot {i+1} hits: {hits}")
@@ -353,29 +363,23 @@ class PointCloudProcessor:
         o3d.visualization.draw_geometries([cloud], window_name="Final Cloud", width=1280, height=840)
 
     def save_point_cloud(self, cloud):
-        o3d.io.write_point_cloud(self.ply_save_directory / "Nome_cloud.ply", cloud)
-        print(f"Point cloud saved to {self.ply_save_directory / 'Nome_cloud.ply'}")
+        o3d.io.write_point_cloud(self.ply_save_directory / "complete_cloud.ply", cloud)
+        print(f"Point cloud saved to {self.ply_save_directory / 'complete_cloud.ply'}")
 
-    def full_pipeline(self):
+    def full_pipeline(self, robot_poses=None):
         # Load and process
         self.raw_clouds = self.load_ply_files()
         print(f"Loaded {len(self.raw_clouds)} point clouds.")
         self.processed_clouds = self.process_all_pointclouds()
         self.merged_cloud = self.merge_pointclouds(self.processed_clouds)
+        
         self.save_point_cloud(self.merged_cloud)
         
         # Voxel grid
         self.create_voxel_grid()
         
-        # Robot configs --> ora da sistemare le pose dei robot
-        robot_configs = [
-            {'position': np.array([0., 16., 0.05]), 'yaw': 1.5708, 'name': 'shelfino1'},
-            {'position': np.array([0., 24.0, 0.05]), 'yaw': -1.5708, 'name': 'pollo'},
-            {'position': np.array([4., 20.0, 0.05]), 'yaw': 3.14, 'name': 'mario'},
-        ]
-        
         # Multi-robot mapping
-        merged_boxes = self.multi_robot_bayesian_mapping(robot_configs, T=3, box_size=0.1)
+        merged_boxes = self.multi_robot_bayesian_mapping(T=3, box_size=0.1)
         
         # Analysis
         empty_boxes, occupied_boxes, unknown_boxes = self.color_boxes_by_probability(merged_boxes)
@@ -388,7 +392,7 @@ class PointCloudProcessor:
         centroid_geom = self.calculate_global_centroid(0.1)
         
         robot_meshes = []
-        for cfg in robot_configs:
+        for cfg in self.robot_pose:
             robot_meshes.extend(self.create_robot_frame(cfg['position'], cfg['yaw'], cfg['name'], 0.3))
         
         pcd_vis = copy.deepcopy(self.merged_cloud)
@@ -403,8 +407,9 @@ class PointCloudProcessor:
 
 
 def main():
-    ply_directory = "/ros2_ws/ply_filtered"
-    ply_save_directory = "/ros2_ws/complete_pcl"
+    ply_directory = "/ros2_ws/src/working_directory/point_cloud/filtered_ply"
+    # where to save processed .ply files --> in mesh folder save also the .ply and the mesh files
+    ply_save_directory = "/ros2_ws/src/working_directory/mesh"
     processor = PointCloudProcessor(ply_directory=ply_directory, ply_save_directory=ply_save_directory)
 
     processor.full_pipeline()
