@@ -9,6 +9,7 @@ import numpy as np
 from std_srvs.srv import Trigger
 from geometry_msgs.msg import Pose, PoseArray
 from coordination.recostruction import PointCloudProcessor
+from std_msgs.msg import Bool
 
 import sys, yaml
 from geometry_msgs.msg import PoseWithCovarianceStamped
@@ -35,6 +36,8 @@ class CoordinatorPcl(Node):
         )
         
         self.next_array_pose = self.create_publisher(PoseArray, "next_array_pose", 10)
+        
+        self.tick_service_coordination_pub = self.create_publisher(Bool, "coordination/tick_service_coordination", 10)
         
         self.trigger_coordination_srv = self.create_service(
             Trigger,
@@ -106,6 +109,11 @@ class CoordinatorPcl(Node):
                 f"Published {len(cluster_centroids)} cluster centroids + global centroid"
             )
             
+            # Publish tick to signal completion
+            tick_msg = Bool()
+            tick_msg.data = True
+            self.tick_service_coordination_pub.publish(tick_msg)
+            
             response.success = True
             response.message = f"Pipeline executed. Published {len(pose_array.poses)} poses"
             return response
@@ -144,6 +152,11 @@ class CoordinatorPcl(Node):
                 width=1280,
                 height=720,
             )
+
+            # Publish tick to signal completion
+            tick_msg = Bool()
+            tick_msg.data = True
+            self.tick_service_coordination_pub.publish(tick_msg)
 
             response.success = True
             response.message = f"Visualized {len(self.ply_files)} .ply files"
