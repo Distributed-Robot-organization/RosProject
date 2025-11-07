@@ -9,6 +9,7 @@ import numpy as np
 from std_srvs.srv import Trigger
 from geometry_msgs.msg import Pose, PoseArray
 from coordination.recostruction import PointCloudProcessor
+from coordination.build_mesh import BuildMesh
 from std_msgs.msg import Bool
 
 import sys, yaml
@@ -45,6 +46,12 @@ class CoordinatorPcl(Node):
             self.trigger_coordination_next_pose_callback,
         )
         
+        self.generate_mesh_srv = self.create_service(
+            Trigger,
+            "generate_mesh",
+            self.generate_mesh_callback,
+        )
+        
         self.visualize_raw_ply_srv = self.create_service(
             Trigger,
             "visualize_raw_ply_files",
@@ -57,6 +64,7 @@ class CoordinatorPcl(Node):
             ply_directory=self.ply_directory,
             ply_save_directory=self.ply_save_directory
         )
+        self.generate_mesher = BuildMesh(ply_save_directory=self.ply_save_directory)
         
         self.get_logger().info("CoordinatorPcl node started")
         
@@ -128,6 +136,31 @@ class CoordinatorPcl(Node):
         pose_array = PoseArray()
         self.next_array_pose.publish(pose_array)
         self.get_logger().info("PoseArray published")
+
+    def generate_mesh_callback(self, request, response):
+        try:
+            self.get_logger().info("Generate mesh service called")
+            
+            # Generate mesh
+            self.generate_mesher.generate_mesh()
+            self.generate_mesher.save_mesh()
+            self.generate_mesher.visualize_mesh()
+
+            # Publish tick to signal completion
+            tick_msg = Bool()
+            tick_msg.data = True
+            self.tick_service_coordination_pub.publish(tick_msg)
+            
+            response.success = True
+            response.message = "Mesh generated successfully"
+            self.get_logger().info(response.message)
+            return response
+            
+        except Exception as e:
+            response.success = False
+            response.message = f"Error generating mesh: {str(e)}"
+            self.get_logger().error(response.message)
+            return response
 
     def visualize_raw_ply_callback(self, request, response):
         try:

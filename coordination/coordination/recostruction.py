@@ -4,20 +4,9 @@ import copy
 from sklearn.cluster import DBSCAN
 import os
 from pathlib import Path
-
+import json
 class PointCloudProcessor:
        
-    # Bayesian constants
-    P_PRIOR = 0.5
-    L_PRIOR = 0.0
-    L_OCC = 2.2
-    L_FREE = -2.2
-    L_MIN, L_MAX = -6.0, 6.0
-
-    # Consensus parameters
-    CONSENSUS_ITERS = 3
-    CONSENSUS_ALPHA = 0.5
-
     def __init__(self, ply_directory: str, ply_save_directory: str, robot_poses=None):
         
         self.ply_directory = Path(ply_directory)
@@ -25,27 +14,32 @@ class PointCloudProcessor:
 
         if not os.path.exists(ply_directory):
             raise FileNotFoundError(f"Directory does not exist: {ply_directory}")
+        if not os.path.exists(ply_save_directory):
+            raise FileNotFoundError(f"Directory does not exist: {ply_save_directory}")
 
-        print(f"PointCloudProcessor initialized. Loading PLY from: {ply_directory}")
+        
         
         self.raw_clouds = []
         self.processed_clouds = []
         self.merged_cloud = None
-        self.voxel_grid = None
-        self.bbox = None
-        self.box_info = []
-        self.clusters = []
-        self.global_centroid = None
+        self.point_t = []
+        self.boxxes = []
+        self.big_box = None
+        self.clusters_boxxes = []
+        
+        
         if robot_poses is None:
-            # Robot configs --> ora da sistemare le pose dei robot
+            # solo per le prove
             self.robot_pose = [
                 {'position': np.array([0., 16., 0.05]), 'yaw': 1.5708, 'name': 'shelfino1'},
                 {'position': np.array([0., 24.0, 0.05]), 'yaw': -1.5708, 'name': 'pollo'},
-                {'position': np.array([4., 20.0, 0.05]), 'yaw': 3.14, 'name': 'mario'},
+                # {'position': np.array([4., 20.0, 0.05]), 'yaw': 3.14, 'name': 'mario'},
             ]  
         else:
             self.robot_pose = robot_poses
-            
+        
+        print(f"PointCloudProcessor initialized.")
+    
         
     def load_ply_files(self):
         cloud_list = []
@@ -72,233 +66,478 @@ class PointCloudProcessor:
             processed.append(pcd_proc)
         return processed
     
-    def merge_pointclouds(self, pcl_list, voxel_size=0.002):
-        merged = o3d.geometry.PointCloud()
-        for p in pcl_list:
-            merged += p
-        merged = merged.voxel_down_sample(voxel_size=voxel_size)
-        merged, _ = merged.remove_statistical_outlier(nb_neighbors=20, std_ratio=2.0)
-        merged.estimate_normals(search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=0.01, max_nn=30))
-        merged.orient_normals_consistent_tangent_plane(30)
-        return merged
-    
-    def create_voxel_grid(self, voxel_size=0.005):
-        bbox = self.merged_cloud.get_axis_aligned_bounding_box()
-        min_bound = np.array(bbox.min_bound) - voxel_size * 2
-        max_bound = np.array(bbox.max_bound) + voxel_size * 2
-        self.voxel_grid = o3d.geometry.VoxelGrid.create_from_point_cloud_within_bounds(
-            self.merged_cloud, voxel_size=voxel_size, min_bound=min_bound, max_bound=max_bound)
-        self.bbox = bbox
-        grid_size = np.ceil((max_bound - min_bound) / voxel_size).astype(int)
-        print(f"Voxel grid: {grid_size[0]}x{grid_size[1]}x{grid_size[2]}, occupied: {len(self.voxel_grid.get_voxels())}")
-        # show to ply with voxels
-        #o3d.visualization.draw_geometries([self.voxel_grid], window_name="Voxel Grid", width=1280, height=720)
-    
-    def create_uniform_grid_boxes(self, box_size=0.1):
-        min_bound, max_bound = np.array(self.bbox.min_bound), np.array(self.bbox.max_bound)
-        grid_dims = np.ceil((max_bound - min_bound) / box_size).astype(int)
-        print(f"Box grid: {grid_dims[0]}x{grid_dims[1]}x{grid_dims[2]}, total: {np.prod(grid_dims)}")
+    def guassian_distribution_point_clouds(self, processed, variance=1.5):
         
-        self.box_info = []
-        for i in range(grid_dims[0]):
-            for j in range(grid_dims[1]):
-                for k in range(grid_dims[2]):
-                    box_min = min_bound + np.array([i, j, k]) * box_size
-                    box_max = box_min + box_size
-                    bbox = o3d.geometry.AxisAlignedBoundingBox(box_min, box_max)
-                    bbox.color = (0.7, 0.7, 0.7)
-                    self.box_info.append({
-                        'index': (i, j, k), 'min': box_min, 'max': box_max,
-                        'center': (box_min + box_max) / 2, 'bbox': bbox,
-                        'has_points': False, 'points_count': 0, 'hit_by_ray': False,
-                        'log_odds': self.L_PRIOR, 'observations': 0
-                    })
-        return grid_dims, box_size
-    
-    def check_boxes_with_points(self, boxes):
-        points = np.asarray(self.merged_cloud.points)
-        for box in boxes:
-            mask = np.all((points >= box['min']) & (points <= box['max']), axis=1)
-            box['points_count'] = int(np.sum(mask))
-            box['has_points'] = box['points_count'] > 0
-    
-    def ray_box_intersection(self, ray_origin, ray_direction, box_min, box_max, max_distance):
-        tmin, tmax = -np.inf, np.inf
-        for i in range(3):
-            if abs(ray_direction[i]) < 1e-8:
-                if ray_origin[i] < box_min[i] or ray_origin[i] > box_max[i]:
-                    return False
-            else:
-                t1, t2 = (box_min[i] - ray_origin[i]) / ray_direction[i], (box_max[i] - ray_origin[i]) / ray_direction[i]
-                if t1 > t2: t1, t2 = t2, t1
-                tmin, tmax = max(tmin, t1), min(tmax, t2)
-                if tmin > tmax: return False
-        return tmin >= 0 and tmin <= max_distance
-    
-    def raycast_from_robot(self, robot_pos, robot_yaw, boxes, max_distance=30.0, num_h=60, num_v=20, fov_h=np.pi/2, fov_v=np.pi/6):
-        Rz = np.array([[np.cos(robot_yaw), -np.sin(robot_yaw), 0],
-                       [np.sin(robot_yaw), np.cos(robot_yaw), 0], [0, 0, 1]])
-        rays_hit = 0
-        for i in range(num_h):
-            for j in range(num_v):
-                angle_h = -fov_h/2 + (i/(num_h-1))*fov_h
-                angle_v = -fov_v/2 + (j/(num_v-1))*fov_v
-                dloc = np.array([np.cos(angle_v)*np.cos(angle_h), np.cos(angle_v)*np.sin(angle_h), np.sin(angle_v)])
-                direction = Rz @ dloc
-                for box in boxes:
-                    if self.ray_box_intersection(robot_pos, direction, box['min'], box['max'], max_distance):
-                        box['hit_by_ray'] = True
-                        rays_hit += 1
-        return rays_hit
-    
-    def bayes_update_boxes(self, boxes):
-        for box in boxes:
-            if box['hit_by_ray']:
-                L_incr = self.L_OCC if box['has_points'] else self.L_FREE
-                box['log_odds'] = np.clip(box['log_odds'] + L_incr, self.L_MIN, self.L_MAX)
-                box['observations'] += 1
-    
-    def consensus_step(self, robots_boxes):
-        L_lists = {b['index']: [] for b in robots_boxes[0]}
-        for r in robots_boxes:
-            for b in r:
-                L_lists[b['index']].append(b['log_odds'])
-        for r in robots_boxes:
-            for b in r:
-                L_avg = np.mean(L_lists[b['index']])
-                b['log_odds'] = np.clip((1-self.CONSENSUS_ALPHA)*b['log_odds'] + self.CONSENSUS_ALPHA*L_avg, self.L_MIN, self.L_MAX)
-    
-    def color_boxes_by_probability(self, boxes, occ_thresh=0.6, free_thresh=0.4):
-        empty_boxes, occupied_boxes, unknown_boxes = [], [], []
-        for box in boxes:
-            p = 1.0 / (1.0 + np.exp(-box['log_odds']))
-            if p >= occ_thresh:
-                box['bbox'].color = (0, 1, 0)
-                occupied_boxes.append(box)
-            elif p <= free_thresh:
-                box['bbox'].color = (1, 0, 0)
-                empty_boxes.append(box)
-            else:
-                box['bbox'].color = (0.3, 0.3, 0.3)
-                unknown_boxes.append(box)
-        return empty_boxes, occupied_boxes, unknown_boxes
-    
-    def color_boxes_by_density(self, occupied_boxes, threshold_percentile=10):
-        if not occupied_boxes: return [], []
-        points_counts = [box['points_count'] for box in occupied_boxes]
-        threshold = np.percentile(points_counts, threshold_percentile)
-        min_points, max_points = min(points_counts), max(points_counts)
-        print(f"\nDensity: min={min_points}, max={max_points}, threshold={threshold:.1f}")
+        for pcd in processed:
+            points = np.asarray(pcd.points)
+            centered = points - np.mean(points, axis=0)
+            cov = np.cov(centered.T)
+            eigvals, eigvecs = np.linalg.eigh(cov)
+
+            order = np.argsort(eigvals)[::-1]
+            eigvals = eigvals[order]
+            eigvecs = eigvecs[:, order]
+
+            points_pca = centered @ eigvecs
+            dist_elliptic = np.sqrt(
+                (points_pca[:,0]/np.sqrt(eigvals[0]))**2 +
+                (points_pca[:,1]/np.sqrt(eigvals[1]))**2 +
+                (points_pca[:,2]/np.sqrt(eigvals[2]))**2
+            )
+
+            observations = np.exp(-(dist_elliptic**2) / (2 * variance**2))
+
+            obs_norm = (observations - observations.min()) / (observations.max() - observations.min())
+           
+            colors = np.zeros((len(obs_norm), 3))
+            for i, val in enumerate(obs_norm):
+                if val > 0.5:
+                    colors[i] = [2*(1.0-val), 1.0, 0.0]
+                else:
+                    colors[i] = [1.0, 2*val, 0.0]
+            pcd.colors = o3d.utility.Vector3dVector(colors)
+
+            for point, obs, col in zip(points, observations, colors):
+                self.point_t.append([point, obs, col.tolist()])
         
-        low_density, high_density = [], []
-        for box in occupied_boxes:
-            points = box['points_count']
-            density_ratio = (points - min_points) / (max_points - min_points) if max_points > min_points else 0
-            if points <= threshold:
-                box['bbox'].color = (1.0, 0.5 + 0.5 * density_ratio, 0.0)
-                box['density_level'] = 'low'
-                low_density.append(box)
-            else:
-                box['bbox'].color = (0.0, 0.5 + 0.5 * density_ratio, 0.0)
-                box['density_level'] = 'high'
-                high_density.append(box)
-        print(f"Low density: {len(low_density)}, High density: {len(high_density)}")
-        return low_density, high_density
+        print(f"Created {len(self.point_t)} point observations with Gaussian distribution")
+        return self.point_t
     
-    def cluster_low_density_boxes(self, low_density_boxes, box_size):
-        if not low_density_boxes: return []
-        print("\n=== Clustering ===")
-        centers = np.array([box['center'] for box in low_density_boxes])
-        labels = DBSCAN(eps=box_size * 1.8, min_samples=2).fit(centers).labels_
-        n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
-        print(f"Clusters: {n_clusters}, Noise: {list(labels).count(-1)}")
+    def create_boxxes(self, grid_divisions=(10, 10, 10)):
+        if len(self.point_t) == 0:
+            print("No point_t data available. Run guassian_distribution_point_clouds() first.")
+            return
         
-        clusters = []
-        for cid in range(n_clusters):
-            cboxes = [low_density_boxes[i] for i in range(len(low_density_boxes)) if labels[i] == cid]
-            ccenters = np.array([b['center'] for b in cboxes])
-            all_mins, all_maxs = np.array([b['min'] for b in cboxes]), np.array([b['max'] for b in cboxes])
-            clusters.append({
-                'id': cid, 'boxes': cboxes, 'centroid': np.mean(ccenters, axis=0),
-                'min_bound': np.min(all_mins, axis=0), 'max_bound': np.max(all_maxs, axis=0),
-                'size': len(cboxes), 'volume': np.prod(np.max(all_maxs, axis=0) - np.min(all_mins, axis=0))
-            })
-            print(f"Cluster {cid}: size={len(cboxes)}, volume={clusters[-1]['volume']:.6f}")
-        return clusters
+        # Extract all points
+        points = np.array([p[0] for p in self.point_t], dtype=float)
+        
+        # Create main bounding box
+        min_bound = points.min(axis=0)
+        max_bound = points.max(axis=0)
+        self.big_box = {
+            'min_bound': min_bound,
+            'max_bound': max_bound,
+            'center': (min_bound + max_bound) / 2,
+            'extent': max_bound - min_bound
+        }
+        
+        print(f"Main bounding box created: min={min_bound}, max={max_bound}")
+        
+        # Calculate cell dimensions
+        nx, ny, nz = grid_divisions
+        cell_size = self.big_box['extent'] / np.array([nx, ny, nz])
+        
+        # Create subcells
+        self.boxxes = []
+        cell_id = 0
+        
+        for i in range(nx):
+            for j in range(ny):
+                for k in range(nz):
+                    # Calculate cell bounds
+                    cell_min = min_bound + cell_size * np.array([i, j, k])
+                    cell_max = cell_min + cell_size
+                    cell_center = (cell_min + cell_max) / 2
+                    
+                    # Find points in this cell
+                    mask = np.all((points >= cell_min) & (points < cell_max), axis=1)
+                    points_in_cell = [self.point_t[idx] for idx in np.where(mask)[0]]
+                    
+                    # Create cell data
+                    cell_data = {
+                        'id': cell_id,
+                        'pose_box': {
+                            'min_bound': cell_min,
+                            'max_bound': cell_max
+                        },
+                        'centroid': cell_center,
+                        'point_t_cell': points_in_cell if len(points_in_cell) > 0 else None,
+                        'avg_observation': np.mean([p[1] for p in points_in_cell]) if len(points_in_cell) > 0 else None
+                    }
+                    
+                    self.boxxes.append(cell_data)
+                    cell_id += 1
+        
+        non_empty_cells = sum(1 for box in self.boxxes if box['point_t_cell'] is not None)
+        print(f"Created {len(self.boxxes)} cells ({non_empty_cells} non-empty) with grid divisions {grid_divisions}")
+        return self.boxxes
     
-    def create_cluster_visualization(self, box_size):
-        geometries = []
-        colors = [[1,0,0],[0,0,1],[1,1,0],[1,0,1],[0,1,1],[1,0.5,0],[0.5,0,1],[0,0.5,0]]
+    def create_clusters_boxxes(self, observation_threshold=0.2, eps=0.1, min_samples=3, min_cluster_size=15):
+        """
+        Create clusters of boxes with low observation values.
+        Groups nearby boxes with avg_observation below threshold into regions.
+        """
+        if len(self.boxxes) == 0:
+            print("No boxes available. Run create_boxxes() first.")
+            return
         
-        # Ottieni dimensioni cluster per colore graduato
-        if self.clusters:
-            sizes = [c['size'] for c in self.clusters]
-            min_size, max_size = min(sizes), max(sizes)
+        # Filter boxes with low observation
+        low_obs_boxes = []
+        low_obs_indices = []
+        
+        for idx, box in enumerate(self.boxxes):
+            if box['avg_observation'] is not None and box['avg_observation'] < observation_threshold:
+                low_obs_boxes.append(box)
+                low_obs_indices.append(idx)
+        
+        if len(low_obs_boxes) == 0:
+            print(f"No boxes found with observation < {observation_threshold}")
+            return
+        
+        print(f"Found {len(low_obs_boxes)} boxes with low observation (< {observation_threshold})")
+        
+        # Extract centroids for clustering
+        centroids = np.array([box['centroid'] for box in low_obs_boxes])
+        
+        # Apply DBSCAN clustering
+        clustering = DBSCAN(eps=eps, min_samples=min_samples).fit(centroids)
+        labels = clustering.labels_
+        
+        # Group boxes by cluster
+        unique_labels = set(labels)
+        if -1 in unique_labels:
+            unique_labels.remove(-1)  # Remove noise label
+        
+        self.clusters_boxxes = []
+        
+        for label in unique_labels:
+            cluster_mask = labels == label
+            cluster_boxes = [low_obs_boxes[i] for i in np.where(cluster_mask)[0]]
             
-            for i, c in enumerate(self.clusters):
-                # Colore base dal palette
-                base_color = colors[i % len(colors)]
-                
-                # Intensità basata sulla dimensione del cluster
-                size_ratio = (c['size'] - min_size) / (max_size - min_size) if max_size > min_size else 0.5
-                # Più grande il cluster, più intenso il colore
-                color = [ch * (0.4 + 0.6 * size_ratio) for ch in base_color]
-                
-                # Colora le box del cluster
-                for box in c['boxes']: 
-                    box['bbox'].color = color
-                
-                # Sfera al centroide
-                sphere = o3d.geometry.TriangleMesh.create_sphere(radius=box_size*0.2)
-                sphere.paint_uniform_color(color)
-                sphere.translate(c['centroid'])
-                geometries.append(sphere)
-                
-                # Bounding box del cluster
-                cbbox = o3d.geometry.AxisAlignedBoundingBox(c['min_bound'], c['max_bound'])
-                cbbox.color = color
-                geometries.append(cbbox)
-                
-                # Frame di riferimento al centroide
-                frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=box_size*2)
-                frame.translate(c['centroid'])
-                geometries.append(frame)
+            # Filter by minimum cluster size
+            if len(cluster_boxes) < min_cluster_size:
+                continue
+            
+            # Calculate cluster centroid
+            cluster_centroids = np.array([box['centroid'] for box in cluster_boxes])
+            cluster_centroid = np.mean(cluster_centroids, axis=0)
+            
+            # Calculate cluster bounds
+            all_mins = np.array([box['pose_box']['min_bound'] for box in cluster_boxes])
+            all_maxs = np.array([box['pose_box']['max_bound'] for box in cluster_boxes])
+            cluster_min = np.min(all_mins, axis=0)
+            cluster_max = np.max(all_maxs, axis=0)
+            
+            # Calculate average observation for the cluster
+            avg_obs = np.mean([box['avg_observation'] for box in cluster_boxes])
+            
+            cluster_data = {
+                'cluster_id': label,
+                'boxes': cluster_boxes,
+                'centroid': cluster_centroid,
+                'min_bound': cluster_min,
+                'max_bound': cluster_max,
+                'num_boxes': len(cluster_boxes),
+                'avg_observation': avg_obs
+            }
+            
+            self.clusters_boxxes.append(cluster_data)
         
-        return geometries
+        print(f"Created {len(self.clusters_boxxes)} clusters from low-observation boxes")
+        return self.clusters_boxxes
     
-    def create_infill_boxes(self, box_size):
-        infill = []
-        print("\n=== Creating infill ===")
-        for c in self.clusters:
-            dims = np.ceil((c['max_bound'] - c['min_bound']) / box_size).astype(int)
-            print(f"Cluster {c['id']}: {dims[0]}x{dims[1]}x{dims[2]} infill boxes")
-            for i in range(dims[0]):
-                for j in range(dims[1]):
-                    for k in range(dims[2]):
-                        bmin = c['min_bound'] + np.array([i,j,k])*box_size
-                        bbox = o3d.geometry.AxisAlignedBoundingBox(bmin, bmin + box_size)
-                        bbox.color = (1,1,0)
-                        infill.append({'cluster_id': c['id'], 'min': bmin, 'max': bmin + box_size,
-                                     'center': (bmin + bmin + box_size)/2, 'bbox': bbox})
-        return infill
+    def save_boxxes_json(self, filename="boxxes_object.json"):
+        if len(self.boxxes) == 0:
+            print("ATTENTION NO BOXES TO SAVE")
+            return
+        
+        data_boxxes = copy.deepcopy(self.boxxes)
+        
+        for cell_data in data_boxxes:
+            # (np.ndarray -> list)
+            cell_data['pose_box']['min_bound'] = cell_data['pose_box']['min_bound'].tolist()
+            cell_data['pose_box']['max_bound'] = cell_data['pose_box']['max_bound'].tolist()
+            cell_data['centroid'] = cell_data['centroid'].tolist()
+            
+            # (np.float64 -> float)
+            if isinstance(cell_data['avg_observation'], np.floating):
+                cell_data['avg_observation'] = float(cell_data['avg_observation'])
+
+            # (npy list of lists)
+            if cell_data['point_t_cell'] is not None:
+                # p is a list [point, obs, col]
+                converted_points = []
+                for p in cell_data['point_t_cell']:
+                    converted_point = [
+                        p[0].tolist() if isinstance(p[0], np.ndarray) else p[0],  # point
+                        float(p[1]) if isinstance(p[1], np.floating) else p[1],    # obs
+                        p[2].tolist() if isinstance(p[2], np.ndarray) else p[2]    # col
+                    ]
+                    converted_points.append(converted_point)
+                cell_data['point_t_cell'] = converted_points
+        filepath = self.ply_save_directory / filename
+        try:
+            with open(filepath, 'w') as f:  
+                json.dump(data_boxxes, f, indent=4)
+            print(f"data saved to: {filepath}")
+        except Exception as e:
+            print(f"Error saving JSON file: {e}")
+
+    def save_point_cloud(self):
+        if len(self.point_t) == 0:
+            print("no point to save")
+            return
+
+        points = np.array([p[0] for p in self.point_t], dtype=float)
+        colors = np.array([p[2] for p in self.point_t], dtype=float)
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(points)
+        pcd.colors = o3d.utility.Vector3dVector(colors)
+        
+        o3d.io.write_point_cloud(self.ply_save_directory / "complete_cloud.ply", pcd)
+        print(f"Point cloud saved to {self.ply_save_directory / 'complete_cloud.ply'}")
+
+    def join_old_and_actual_values_boxxes(self):
+        json_filepath = self.ply_save_directory / "boxxes_object.json"
+        
+        # Check if previous data exists
+        if not json_filepath.exists():
+            print(f"No JSON file found at {json_filepath}. Skipping merge.")
+            return
+        
+        try:
+            with open(json_filepath, 'r') as f:
+                old_data = json.load(f)
+            
+            print(f"Loaded {len(old_data)} previous boxes from JSON")
+            
+            # Extract all old point_t data
+            old_point_t = []
+            for cell_data in old_data:
+                if cell_data['point_t_cell'] is not None:
+                    # Convert back from JSON format to internal format
+                    for p in cell_data['point_t_cell']:
+                        point = np.array(p[0], dtype=float)
+                        obs = float(p[1])                  
+                        col = p[2]
+                        old_point_t.append([point, obs, col])
+            
+            print(f"Extracted {len(old_point_t)} old points")
+            print(f"Current points: {len(self.point_t)}")
+            
+            # Merge old and new point_t
+            # Create a set of current point
+            current_points_set = set()
+            for p in self.point_t:
+                point_tuple = tuple(p[0].tolist() if isinstance(p[0], np.ndarray) else p[0])
+                current_points_set.add(point_tuple)
+            
+            # Add old points that don't overlap with current ones
+            added_count = 0
+            for old_p in old_point_t:
+                point_tuple = tuple(old_p[0].tolist())
+                if point_tuple not in current_points_set:
+                    self.point_t.append(old_p)
+                    current_points_set.add(point_tuple)
+                    added_count += 1
+            
+            print(f"Added {added_count} unique old points to current point_t")
+            print(f"Total points after merge: {len(self.point_t)}")
+            
+        except json.JSONDecodeError as e:
+            print(f"Error decoding JSON file: {e}")
+        except Exception as e:
+            print(f"Error loading or merging data: {e}")
+    def eliminate_ply_files(self):
+        ply_files = sorted(Path(self.ply_directory).glob("*.ply"))
+        for ply in ply_files:
+            try:
+                os.remove(ply)
+                print(f"Deleted file: {ply}")
+            except Exception as e:
+                print(f"Error deleting file {ply}: {e}")
+                
+    def full_pipeline(self, robot_poses=None):
+        # Load and process
+        self.raw_clouds = self.load_ply_files()
+        print(f"Loaded {len(self.raw_clouds)} point clouds.")
+        self.processed_clouds = self.process_all_pointclouds()
+        self.guassian_distribution_point_clouds(self.processed_clouds)
+        #self.visualize_point_t()
+        # create clusters
+        self.join_old_and_actual_values_boxxes()
+        self.create_boxxes(grid_divisions=(20,20,20))
+        self.visualize_box_mesh()
+        self.visualize_boxxes()
+        
+        self.create_clusters_boxxes()
+        self.visualize_cluster_boxxes()
+        
+        # save point and boxes
+        self.save_point_cloud()
+        self.save_boxxes_json()
+        self.eliminate_ply_files()
+        
+      
+    def visualize_point_t(self):
+        if len(self.point_t) == 0:
+            print("No point_t data available. Run guassian_distribution_point_clouds() first.")
+            return
+        points = np.array([p[0] for p in self.point_t], dtype=float)
+        colors = np.array([p[2] for p in self.point_t], dtype=float)
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(points)
+        pcd.colors = o3d.utility.Vector3dVector(colors)
+
+        print(f"Visualizing {len(points)} points from point_t...")
+        o3d.visualization.draw_geometries([pcd])
+        
+    def visualize_boxxes(self):
+        if len(self.boxxes) == 0:
+            print("No boxes available. Run create_boxxes() first.")
+            return
+        
+        geometries = []
+        
+        # Create line set for each box
+        for box in self.boxxes:
+            min_b = box['pose_box']['min_bound']
+            max_b = box['pose_box']['max_bound']
+            
+            # Create axis-aligned bounding box
+            bbox = o3d.geometry.AxisAlignedBoundingBox(min_bound=min_b, max_bound=max_b)
+            
+            # Green -> Yellow -> Red gradient based on observation value
+            val = box['avg_observation']
+            if val is None:
+                continue
+            
+            elif val > 0.5:
+                # Green -> Yellow
+                color = [2*(1.0-val), 1.0, 0.0]
+            else:
+                # Yellow -> Red
+                color = [1.0, 2*val, 0.0]
+        
+            bbox.color = color
+            geometries.append(bbox)
+        
+        # Add point cloud if available
+        if len(self.point_t) > 0:
+            points = np.array([p[0] for p in self.point_t], dtype=float)
+            colors = np.array([p[2] for p in self.point_t], dtype=float)
+            pcd = o3d.geometry.PointCloud()
+            pcd.points = o3d.utility.Vector3dVector(points)
+            pcd.colors = o3d.utility.Vector3dVector(colors)
+            geometries.append(pcd)
+        
+        print(f"Visualizing {len(self.boxxes)} boxes...")
+        o3d.visualization.draw_geometries(geometries)
+        
+    def visualize_box_mesh(self, boxxes=None):
+        if boxxes is None:
+            boxxes = self.boxxes
+        if len(boxxes) == 0:
+            print("No boxes available. Run create_boxxes() first.")
+            return
+        
+        geometries = []
+
+        for box in self.boxxes:
+            min_b = np.array(box['pose_box']['min_bound'])
+            max_b = np.array(box['pose_box']['max_bound'])
+            size = max_b - min_b
+
+            # Mesh piena
+            mesh = o3d.geometry.TriangleMesh.create_box(
+                width=size[0],
+                height=size[1],
+                depth=size[2]
+            )
+            mesh.translate(min_b)
+            mesh.compute_vertex_normals()
+
+            # Colore con gradiente
+            val = box['avg_observation']
+            if val is None:
+                # White for empty boxes
+                continue
+            elif val > 0.5:
+                color = [2*(1.0-val), 1.0, 0.0]
+            else:
+                color = [1.0, 2*val, 0.0]
+
+            mesh.paint_uniform_color(color)
+
+            geometries.append(mesh)
+
+        # Point cloud
+        if len(self.point_t) > 0:
+            points = np.array([p[0] for p in self.point_t], dtype=float)
+            colors = np.array([p[2] for p in self.point_t], dtype=float)
+            pcd = o3d.geometry.PointCloud()
+            pcd.points = o3d.utility.Vector3dVector(points)
+            pcd.colors = o3d.utility.Vector3dVector(colors)
+            geometries.append(pcd)
+
+        print(f"Visualizing {len(geometries)} geometries...")
+        o3d.visualization.draw_geometries(geometries)
     
-    def calculate_global_centroid(self, box_size):
-        points = np.asarray(self.merged_cloud.points)
-        self.global_centroid = np.mean(points, axis=0)
-        print(f"\nGlobal centroid: [{self.global_centroid[0]:.3f}, {self.global_centroid[1]:.3f}, {self.global_centroid[2]:.3f}]")
+    def visualize_cluster_boxxes(self):
+        """
+        Visualize clusters with their centroids and the main bounding box.
+        """
+        if len(self.clusters_boxxes) == 0:
+            print("No clusters available. Run create_clusters_boxxes() first.")
+            return
         
-        sphere = o3d.geometry.TriangleMesh.create_sphere(radius=box_size * 0.3)
-        sphere.paint_uniform_color([1, 1, 1])
-        sphere.translate(self.global_centroid)
-        frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=box_size * 3)
-        frame.translate(self.global_centroid)
+        geometries = []
         
-        print("\n=== Cluster distances ===")
-        for cluster in self.clusters:
-            distance = np.linalg.norm(self.global_centroid - cluster['centroid'])
-            print(f"Cluster {cluster['id']}: distance={distance:.3f}m")
+        # Add main big box (wireframe in blue)
+        if self.big_box is not None:
+            big_bbox = o3d.geometry.AxisAlignedBoundingBox(
+                min_bound=self.big_box['min_bound'],
+                max_bound=self.big_box['max_bound']
+            )
+            big_bbox.color = [0, 0, 1]  # Blue
+            geometries.append(big_bbox)
         
-        return [sphere, frame]
+        # Color palette for clusters
+        colors = [
+            [1, 0, 0],      # Red
+            [0, 1, 0],      # Green
+            [1, 1, 0],      # Yellow
+            [1, 0, 1],      # Magenta
+            [0, 1, 1],      # Cyan
+            [1, 0.5, 0],    # Orange
+            [0.5, 0, 1],    # Purple
+            [0, 0.5, 0.5],  # Teal
+        ]
+        
+        for idx, cluster in enumerate(self.clusters_boxxes):
+            color = colors[idx % len(colors)]
+            
+            # Create bounding box for cluster
+            cluster_bbox = o3d.geometry.AxisAlignedBoundingBox(
+                min_bound=cluster['min_bound'],
+                max_bound=cluster['max_bound']
+            )
+            cluster_bbox.color = color
+            geometries.append(cluster_bbox)
+            
+            # Create sphere at centroid
+            centroid_sphere = o3d.geometry.TriangleMesh.create_sphere(radius=0.01)
+            centroid_sphere.translate(cluster['centroid'])
+            centroid_sphere.paint_uniform_color(color)
+            centroid_sphere.compute_vertex_normals()
+            geometries.append(centroid_sphere)
+            
+            # Add coordinate frame at centroid
+            frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.15)
+            frame.translate(cluster['centroid'])
+            geometries.append(frame)
+        
+        # Add original point cloud if available
+        if len(self.point_t) > 0:
+            points = np.array([p[0] for p in self.point_t], dtype=float)
+            colors_pc = np.array([p[2] for p in self.point_t], dtype=float)
+            pcd = o3d.geometry.PointCloud()
+            pcd.points = o3d.utility.Vector3dVector(points)
+            pcd.colors = o3d.utility.Vector3dVector(colors_pc)
+            geometries.append(pcd)
+        
+        print(f"Visualizing {len(self.clusters_boxxes)} clusters with centroids and main bounding box")
+        o3d.visualization.draw_geometries(geometries)
     
     def create_robot_frame(self, position, yaw, name, size=0.1):
         robot_body = o3d.geometry.TriangleMesh.create_cylinder(radius=size/2, height=size/3)
@@ -318,94 +557,7 @@ class PointCloudProcessor:
             geom.translate(position)
         return [robot_body, frame, arrow]
     
-    def multi_robot_bayesian_mapping(self, T=3, box_size=0.1):
-        print("\n=== Multi-robot Bayesian mapping ===")
-        grid_dims, _ = self.create_uniform_grid_boxes(box_size)
-        
-        # Initialize robot boxes
-        robots_boxes = []
-        for _ in self.robot_pose:
-            robot_boxes = [copy.deepcopy({**b, 'log_odds': self.L_PRIOR, 'observations': 0, 
-                                         'hit_by_ray': False, 'has_points': False, 'points_count': 0}) 
-                          for b in self.box_info]
-            robots_boxes.append(robot_boxes)
-        
-        # Simulate T timesteps --> to be adapted to real robot poses and raycasting
-        for t in range(T):
-            print(f"\n=== Timestep {t+1}/{T} ===")
-            for robot_boxes in robots_boxes:
-                for b in robot_boxes:
-                    b['hit_by_ray'] = False
-                    b['has_points'] = False
-                    b['points_count'] = 0
-            
-            for i, (robot_boxes, config) in enumerate(zip(robots_boxes, self.robot_pose)):
-                self.check_boxes_with_points(robot_boxes)
-                hits = self.raycast_from_robot(config['position'], config['yaw'], robot_boxes)
-                print(f"Robot {i+1} hits: {hits}")
-                self.bayes_update_boxes(robot_boxes)
-            
-            for _ in range(self.CONSENSUS_ITERS):
-                self.consensus_step(robots_boxes)
-        
-        # Merge results
-        merged_boxes = []
-        for bb1, bb2 in zip(robots_boxes[0], robots_boxes[1]):
-            m = copy.deepcopy(bb1)
-            m['log_odds'] = (bb1['log_odds'] + bb2['log_odds']) / 2.0
-            merged_boxes.append(m)
-        
-        return merged_boxes
     
-    def visualize_point_cloud(self, cloud=None):
-        if cloud is None:
-            cloud = self.merged_cloud
-        o3d.visualization.draw_geometries([cloud], window_name="Final Cloud", width=1280, height=840)
-
-    def save_point_cloud(self, cloud):
-        o3d.io.write_point_cloud(self.ply_save_directory / "complete_cloud.ply", cloud)
-        print(f"Point cloud saved to {self.ply_save_directory / 'complete_cloud.ply'}")
-
-    def full_pipeline(self, robot_poses=None):
-        # Load and process
-        self.raw_clouds = self.load_ply_files()
-        print(f"Loaded {len(self.raw_clouds)} point clouds.")
-        self.processed_clouds = self.process_all_pointclouds()
-        self.merged_cloud = self.merge_pointclouds(self.processed_clouds)
-        
-        self.save_point_cloud(self.merged_cloud)
-        
-        # Voxel grid
-        self.create_voxel_grid()
-        
-        # Multi-robot mapping
-        merged_boxes = self.multi_robot_bayesian_mapping(T=3, box_size=0.1)
-        
-        # Analysis
-        empty_boxes, occupied_boxes, unknown_boxes = self.color_boxes_by_probability(merged_boxes)
-        low_density, high_density = self.color_boxes_by_density(occupied_boxes)
-        self.clusters = self.cluster_low_density_boxes(low_density, 0.1)
-        
-        # Visualization
-        cluster_geom = self.create_cluster_visualization(0.1)
-        infill = self.create_infill_boxes(0.1)
-        centroid_geom = self.calculate_global_centroid(0.1)
-        
-        robot_meshes = []
-        for cfg in self.robot_pose:
-            robot_meshes.extend(self.create_robot_frame(cfg['position'], cfg['yaw'], cfg['name'], 0.3))
-        
-        pcd_vis = copy.deepcopy(self.merged_cloud)
-        pcd_vis.paint_uniform_color([0,1,0])
-        
-        o3d.visualization.draw_geometries(
-            [self.voxel_grid, pcd_vis] + [b['bbox'] for b in infill] + 
-            cluster_geom + centroid_geom + robot_meshes + [self.bbox],
-            window_name="Complete visualization", width=1024, height=768)
-        
-        print("Point clouds processed successfully!")
-
-
 def main():
     ply_directory = "/ros2_ws/src/working_directory/point_cloud/filtered_ply"
     # where to save processed .ply files --> in mesh folder save also the .ply and the mesh files
@@ -413,7 +565,7 @@ def main():
     processor = PointCloudProcessor(ply_directory=ply_directory, ply_save_directory=ply_save_directory)
 
     processor.full_pipeline()
-    processor.visualize_point_cloud()
+    # processor.visualize_point_cloud()
 
     print("FINISH")
     

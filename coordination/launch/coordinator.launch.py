@@ -54,4 +54,5 @@ def generate_launch_description():
 
 
 # ros2 service call /trigger_coordination_next_pose std_srvs/srv/Trigger "{}"
+# ros2 service call /generate_mesh std_srvs/srv/Trigger "{}"
 # ros2 service call /visualize_raw_ply_files std_srvs/srv/Trigger "{}"
