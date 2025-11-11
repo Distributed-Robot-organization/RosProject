@@ -115,7 +115,7 @@ class ObjectDetectionNode(Node):
         self.target_object_name = None  
         self.confidence_threshold = 0.5
         self.detected_objects_list = []
-        self.detection_timer = None  # Timer per continuare detection
+        self.detection_timer = None  
         self.detection_duration = 3.0  # tempo dal primo rilevamento
         
         # TF setup
@@ -151,16 +151,14 @@ class ObjectDetectionNode(Node):
                         points_3d = self.extract_3d_points_from_bbox(
                             self.last_cloud, int(bbox[0]), int(bbox[1]), 
                             int(bbox[2]), int(bbox[3])
-                        )
-                        
+                        )                        
                         # Add metadata for transformation
                         for point in points_3d:
                             point.setdefault('frame_id', self.camera_optical_frame)
                             if 'timestamp' not in point and self.last_rgb_msg:
                                 point['timestamp'] = self.last_rgb_msg.header.stamp
-                    
                         # Transform to map frame
-                        obj['points_3d'] = self.transform_points_to_map(points_3d)
+                        obj['points_3d'] = self.transform_points_to_odom(points_3d)
                         self.get_logger().info(f"Object {obj['label']} (ID {obj['id']}): "
                                              f"Extracted {len(obj['points_3d'])} points")
                 
@@ -362,9 +360,7 @@ class ObjectDetectionNode(Node):
             self.trigger_detection_callback(fake_request, fake_response)
         
             self.get_logger().info(f"Detection stopped: {fake_response.message}")
-            
-
-     
+              
     def get_3d_position(self, cx, cy, x_min, y_max, frame, rgb_data):
         x_3d = y_3d = z_3d = map_x = map_y = map_z = distance = 0.0
 
@@ -458,39 +454,53 @@ class ObjectDetectionNode(Node):
         except Exception as e:
             self.get_logger().error(f"Point extraction error: {e}")
             return []
-    
-    def transform_points_to_map(self, points_3d: list) -> list:
+        
+    def transform_points_to_odom(self, points_3d: list) -> list:
+        # now convert points from camera frame to odom frame --> frame odom è uguale a quella di gazebo
         if not points_3d:
             return []
-        
-        frame_id = points_3d[0].get('frame_id', self.camera_optical_frame)
-        timestamp = points_3d[0].get('timestamp')
-        
+
+        frame_id = points_3d[0].get("frame_id", self.camera_optical_frame)
         try:
-            transform = self.tf_buffer.lookup_transform('map', frame_id, rclpy.time.Time(),
-                                                       timeout=rclpy.duration.Duration(seconds=0.5))
+            transform = self.tf_buffer.lookup_transform(
+                f"{self.robot_namespace}/odom",  
+                frame_id,                        
+                rclpy.time.Time(),               
+                timeout=rclpy.duration.Duration(seconds=0.5)
+            )
+
         except Exception as e:
-            self.get_logger().error(f"Transform error: {e}")
-            return points_3d
-        
+            self.get_logger().error(f"[TF] Transform failed: {e}")
+            return []
+
         transformed = []
-        for point in points_3d:
-            camera_point = geometry_msgs.msg.PointStamped()
-            camera_point.header.frame_id = frame_id
-            if isinstance(timestamp, BuiltinTime):
-                camera_point.header.stamp = timestamp
-            camera_point.point.x, camera_point.point.y, camera_point.point.z = point['x'], point['y'], point['z']
-            
+
+        for p in points_3d:
+            cam_point = geometry_msgs.msg.PointStamped()
+            cam_point.header.frame_id = frame_id
+            cam_point.header.stamp = self.get_clock().now().to_msg()
+
+            cam_point.point.x = p['x']
+            cam_point.point.y = p['y']
+            cam_point.point.z = p['z']
+
             try:
-                map_point = tf2_geometry_msgs.do_transform_point(camera_point, transform)
+                odom_point = tf2_geometry_msgs.do_transform_point(cam_point, transform)
+
                 transformed.append({
-                    'x': float(map_point.point.x), 'y': float(map_point.point.y),
-                    'z': float(map_point.point.z) + self.z_ground_offset,
-                    'pixel_x': point.get('pixel_x'), 'pixel_y': point.get('pixel_y')
+                    'x': float(odom_point.point.x),
+                    'y': float(odom_point.point.y),
+                    'z': float(odom_point.point.z),
+                    'pixel_x': p.get('pixel_x'),
+                    'pixel_y': p.get('pixel_y')
                 })
-            except:
+
+            except Exception as e:
+                self.get_logger().warn(f"[TF] Point transform failed: {e}")
                 continue
+
         return transformed
+
 
     def save_object_pointcloud(self, directory: str, label: str, points_3d: list, obj_id: int):
         try:

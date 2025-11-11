@@ -71,6 +71,9 @@ class PointCloudProcessor:
         for pcd in processed:
             points = np.asarray(pcd.points)
             centered = points - np.mean(points, axis=0)
+            centroid = np.mean(points, axis=0)
+
+            centroid_pcd = o3d.geometry.PointCloud()  
             cov = np.cov(centered.T)
             eigvals, eigvecs = np.linalg.eigh(cov)
 
@@ -98,7 +101,7 @@ class PointCloudProcessor:
             pcd.colors = o3d.utility.Vector3dVector(colors)
 
             for point, obs, col in zip(points, observations, colors):
-                self.point_t.append([point, obs, col.tolist()])
+                self.point_t.append([point, obs, col.tolist(), centroid])
         
         print(f"Created {len(self.point_t)} point observations with Gaussian distribution")
         return self.point_t
@@ -280,6 +283,7 @@ class PointCloudProcessor:
 
         points = np.array([p[0] for p in self.point_t], dtype=float)
         colors = np.array([p[2] for p in self.point_t], dtype=float)
+    
         pcd = o3d.geometry.PointCloud()
         pcd.points = o3d.utility.Vector3dVector(points)
         pcd.colors = o3d.utility.Vector3dVector(colors)
@@ -338,6 +342,7 @@ class PointCloudProcessor:
             print(f"Error decoding JSON file: {e}")
         except Exception as e:
             print(f"Error loading or merging data: {e}")
+    
     def eliminate_ply_files(self):
         ply_files = sorted(Path(self.ply_directory).glob("*.ply"))
         for ply in ply_files:
@@ -353,7 +358,7 @@ class PointCloudProcessor:
         print(f"Loaded {len(self.raw_clouds)} point clouds.")
         self.processed_clouds = self.process_all_pointclouds()
         self.guassian_distribution_point_clouds(self.processed_clouds)
-        #self.visualize_point_t()
+        # self.visualize_point_t()
         # create clusters
         self.join_old_and_actual_values_boxxes()
         self.create_boxxes(grid_divisions=(20,20,20))
@@ -379,8 +384,21 @@ class PointCloudProcessor:
         pcd.points = o3d.utility.Vector3dVector(points)
         pcd.colors = o3d.utility.Vector3dVector(colors)
 
-        print(f"Visualizing {len(points)} points from point_t...")
-        o3d.visualization.draw_geometries([pcd])
+        geometries = [pcd]
+        
+        # Add centroids as red spheres
+        centroids = np.array([p[3] for p in self.point_t], dtype=float)
+        unique_centroids = np.unique(centroids, axis=0)
+        
+        for centroid in unique_centroids:
+            centroid_sphere = o3d.geometry.TriangleMesh.create_sphere(radius=0.02)
+            centroid_sphere.translate(centroid)
+            centroid_sphere.paint_uniform_color([1, 0, 0])  # Red color
+            centroid_sphere.compute_vertex_normals()
+            geometries.append(centroid_sphere)
+
+        print(f"Visualizing {len(points)} points from point_t with {len(unique_centroids)} centroids...")
+        o3d.visualization.draw_geometries(geometries)
         
     def visualize_boxxes(self):
         if len(self.boxxes) == 0:

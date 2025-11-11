@@ -1,2 +1,5 @@
 /dr_vision/data_images
 # /dr_vision/models
+# ignoreare qualsisi pycache
+**/__pycache__/
+vision_system/vision_system/__pycache__

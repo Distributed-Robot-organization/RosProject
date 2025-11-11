@@ -208,7 +208,6 @@ private:
     RCLCPP_INFO(this->get_logger(), "Generated arc path with %zu waypoints", path.poses.size());
     path_pub_->publish(path);
     send_path_goal(path);
-
     response->success = true;
     response->message = "Arc path generated and navigation started.";
   }
@@ -428,7 +427,7 @@ private:
       std_msgs::msg::Bool msg;
       msg.data = true;
       tick_service_navigation_pub->publish(msg);
-      
+      RCLCPP_INFO(this->get_logger(), "Current robot pose: (%.2f, %.2f)", current_pose_.position.x, current_pose_.position.y);
       if (current_goal_handle_) {
         auto cancel_future = action_client_->async_cancel_goal(current_goal_handle_);
         current_goal_handle_.reset();
@@ -504,6 +503,7 @@ private:
           msg.data = true;
           tick_service_navigation_pub->publish(msg);
           
+          RCLCPP_INFO(this->get_logger(), "Current robot pose: (%.2f, %.2f)", current_pose_.position.x, current_pose_.position.y);
           current_goal_handle_.reset();
           saved_path_.poses.clear();
           is_paused_ = false;

@@ -79,6 +79,7 @@ def generate_launch_description():
 #  ros2 service call /generate_arc navigation_system/srv/NavigateArc "{goal: {x: 4.0, y: 0.0, z: 0.0}, center: {x: 0.0, y: 0.0, z: 0.0}, radius: 4.0}"
   
 #  new command
+#  ros2 service call /shelfino1/rotate_shelfino navigation_system/srv/CenterPoint "{center: {x: 0.0, y: 20.0, z: 0.0}}"
 #  ros2 service call /shelfino1/stop_navigation std_srvs/srv/Trigger "{}"
 #  ros2 service call /shelfino1/pause_navigation std_srvs/srv/Trigger "{}"
 #  ros2 service call /shelfino1/rotate_shelfino std_srvs/srv/Trigger "{}"
