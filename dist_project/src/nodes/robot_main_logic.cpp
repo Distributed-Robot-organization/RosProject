@@ -232,6 +232,7 @@ private:
         }
         // discard_movement_ = false;
     }
+    
     void distance_based_vision_activation()
     {
         auto robot_pose = get_robot_pose(tf_buffer_, frame_id_, robot_id_, this->get_clock()->now(), .5, 3);
@@ -245,6 +246,7 @@ private:
             plan_manager();
         }
     }
+    
     void deactivate_vision()
     {
         if (allow_pcl_input_)
@@ -359,8 +361,7 @@ private:
             .detach();
     }
 
-    void
-    stopMovement()
+    void stopMovement()
     {
         discard_movement_ = true;
         if (follow_goal_handle_)
