@@ -1,0 +1,5 @@
+
+    cono:
+      radius: 0.05 #meters
+    hydrant: 
+      radius: 1.0
