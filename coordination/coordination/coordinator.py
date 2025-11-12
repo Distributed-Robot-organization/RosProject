@@ -22,7 +22,7 @@ class CoordinatorPcl(Node):
         self.ply_directory = "/ros2_ws/src/working_directory/point_cloud/filtered_ply"
         # where to save processed .ply files --> in mesh folder save also the .ply and the mesh files
         self.ply_save_directory = "/ros2_ws/src/working_directory/mesh"
-
+        self.yaml_file = "/ros2_ws/src/vision_system/object_params.yaml"
         self.declare_parameter("robot_namespaces", ["shelfino1"])
         self.robot_namespaces = self.get_parameter("robot_namespaces").value
         self.get_logger().info(f"Robots found: {self.robot_namespaces}")
@@ -62,7 +62,9 @@ class CoordinatorPcl(Node):
         
         self.processor = PointCloudProcessor(
             ply_directory=self.ply_directory,
-            ply_save_directory=self.ply_save_directory
+            ply_save_directory=self.ply_save_directory,
+            yaml_file=self.yaml_file,
+            logger=self.get_logger()
         )
         self.generate_mesher = BuildMesh(ply_save_directory=self.ply_save_directory)
         
@@ -80,41 +82,35 @@ class CoordinatorPcl(Node):
         try:   
             
             # Run full pipeline
-            self.processor.full_pipeline(self.robot_poses)
-            
-            cluster_centroids = []
-            for cluster in self.processor.clusters:
-                cluster_centroids.append(cluster['centroid'])
-            
-            global_centroid = self.processor.global_centroid
+            new_points, global_centroid = self.processor.full_pipeline(self.robot_poses)
             
             pose_array = PoseArray()
             pose_array.header.stamp = self.get_clock().now().to_msg()
             pose_array.header.frame_id = "map"
             
-            # Add cluster centroids
-            for centroid in cluster_centroids:
-                pose = Pose()
-                pose.position.x = float(centroid[0])
-                pose.position.y = float(centroid[1])
-                pose.position.z = float(centroid[2])
-                pose.orientation.w = 1.0
-                pose_array.poses.append(pose)
-            
-            # Add global centroid as last pose
             if global_centroid is not None:
+                global_pose = Pose()
+                global_pose.position.x = float(global_centroid[0])
+                global_pose.position.y = float(global_centroid[1])
+                global_pose.position.z = float(global_centroid[2])
+                global_pose.orientation.w = 1.0
+                pose_array.poses.append(global_pose)
+                
+            for point in new_points:
                 pose = Pose()
-                pose.position.x = float(global_centroid[0])
-                pose.position.y = float(global_centroid[1])
-                pose.position.z = float(global_centroid[2])
-                pose.orientation.w = 1.0
+                pose.position.x = float(point[0])
+                pose.position.y = float(point[1])
+                pose.position.z = float(point[2])
+                pose.orientation.w = 1.0 # Neutral orientation
                 pose_array.poses.append(pose)
+                
             
+                
             # Publish PoseArray
             self.next_array_pose.publish(pose_array)
             
             self.get_logger().info(
-                f"Published {len(cluster_centroids)} cluster centroids + global centroid"
+                f"Published {len(new_points)} cluster centroids + global centroid"
             )
             
             # Publish tick to signal completion

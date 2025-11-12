@@ -1,3 +1,4 @@
+from venv import logger
 import open3d as o3d
 import numpy as np
 import copy
@@ -5,13 +6,17 @@ from sklearn.cluster import DBSCAN
 import os
 from pathlib import Path
 import json
+import yaml
+
 class PointCloudProcessor:
        
-    def __init__(self, ply_directory: str, ply_save_directory: str, robot_poses=None):
+    def __init__(self, ply_directory: str, ply_save_directory: str, yaml_file=None, robot_poses=None, logger=None):
         
         self.ply_directory = Path(ply_directory)
         self.ply_save_directory = Path(ply_save_directory)
-
+        self.yaml_file = yaml_file
+        self.logger = logger if logger is not None else __import__('logging').getLogger(__name__)
+        
         if not os.path.exists(ply_directory):
             raise FileNotFoundError(f"Directory does not exist: {ply_directory}")
         if not os.path.exists(ply_save_directory):
@@ -351,7 +356,90 @@ class PointCloudProcessor:
                 print(f"Deleted file: {ply}")
             except Exception as e:
                 print(f"Error deleting file {ply}: {e}")
-                
+    
+    def load_type_obj_yaml(self):
+        if self.yaml_file is None:
+            print("YAML file path is not set.")
+            return {}
+        yaml_path = Path(self.yaml_file)
+        if not yaml_path.exists():
+            print(f"YAML file not found at {yaml_path}")
+            return {}
+        
+        try:
+            with open(yaml_path, 'r') as f:
+                data = yaml.safe_load(f)
+            print(f"Loaded object radii from {yaml_path}: {data}")
+            return data
+        except Exception as e:
+            print(f"Error loading YAML file: {e}")
+            return {}
+    
+    
+    def detect_object_type_from_ply(self):
+        ply_files = sorted(self.ply_directory.glob("*.ply"))
+        
+        if not ply_files:
+            print("No PLY files found to detect object type")
+            return None
+        
+        first_file = ply_files[0].stem  # Get filename without extension
+        object_type = first_file.split('_')[0]  # Get first word
+        
+        print(f"Detected object type: '{object_type}' from file: {ply_files[0].name}")
+        return object_type.lower()
+    
+    def centorids_on_circle(self, objs_names_yaml, object_type_ply):
+        center_circle = self.big_box['center']      
+        radius_circle = objs_names_yaml[object_type_ply]['radius']
+        new_centroids = []
+        print(f"Using radius {radius_circle} for object type '{object_type_ply}'")
+        # Set z coordinate to 0 (ignore height)
+        center_2d = center_circle.copy()
+        center_2d[2] = 0.0
+        if len(self.clusters_boxxes) == 0:
+            print("No clusters available to distribute on circle")
+            return
+        
+        # Calculate angle step for evenly distributed clusters
+        num_clusters = len(self.clusters_boxxes)
+        angle_step = 2 * np.pi / num_clusters
+        
+        print(f"Distributing {num_clusters} cluster centroids on circle:")
+        print(f"  Center: {center_2d}")
+        print(f"  Radius: {radius_circle}")
+        
+        # Project each cluster centroid onto the circle
+        for cluster in self.clusters_boxxes:
+            old_centroid = cluster['centroid'].copy()
+            
+            # Get 2D position (ignore z)
+            old_2d = old_centroid.copy()
+            old_2d[2] = 0.0
+            
+            # Calculate vector from circle center to old centroid
+            direction = old_2d - center_2d
+            
+            # Calculate angle of this direction
+            angle = np.arctan2(direction[1], direction[0])
+            
+            # Project onto circle at this angle
+            x = center_2d[0] + radius_circle * np.cos(angle)
+            y = center_2d[1] + radius_circle * np.sin(angle)
+            z = 0.0
+            
+            new_centroid = np.array([x, y, z])
+            new_centroids.append(new_centroid)
+            
+            # Calculate distance moved
+            distance_moved = np.linalg.norm(new_centroid - old_2d)
+            
+            print(f"  Cluster {cluster['cluster_id']}: {old_centroid} -> {new_centroid}")
+            print(f"    Angle: {np.degrees(angle):.1f}°, Distance moved: {distance_moved:.3f}")
+        
+        print("Cluster centroids projected onto circle at their radial positions")
+        return new_centroids, center_2d, radius_circle
+    
     def full_pipeline(self, robot_poses=None):
         # Load and process
         self.raw_clouds = self.load_ply_files()
@@ -368,10 +456,20 @@ class PointCloudProcessor:
         self.create_clusters_boxxes()
         self.visualize_cluster_boxxes()
         
+        objs_names_yaml = self.load_type_obj_yaml()
+        object_type_ply = self.detect_object_type_from_ply()
+                
+        self.logger.info(f"Loaded YAML object names: {objs_names_yaml}")
+        self.logger.info(f"Detected object type from PLY: {object_type_ply}")
+        
+        new_centroids, center_2d, radius_circle = self.centorids_on_circle(objs_names_yaml, object_type_ply)
+        self.visualize_cluster_boxxes_with_new_centroids(new_centroids, center_2d, radius_circle)
+        
         # save point and boxes
         self.save_point_cloud()
         self.save_boxxes_json()
         self.eliminate_ply_files()
+        return new_centroids, self.big_box['center']      
         
       
     def visualize_point_t(self):
@@ -509,6 +607,19 @@ class PointCloudProcessor:
             )
             big_bbox.color = [0, 0, 1]  # Blue
             geometries.append(big_bbox)
+            
+            # Add global centroid sphere (white/gray)
+            global_centroid_sphere = o3d.geometry.TriangleMesh.create_sphere(radius=0.01)
+            global_centroid_sphere.translate(self.big_box['center'])
+            
+            global_centroid_sphere.paint_uniform_color([1, 1, 1])  # White
+            global_centroid_sphere.compute_vertex_normals()
+            geometries.append(global_centroid_sphere)
+            
+            # Add coordinate frame at global centroid
+            global_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.15)
+            global_frame.translate(self.big_box['center'])
+            geometries.append(global_frame)
         
         # Color palette for clusters
         colors = [
@@ -538,7 +649,7 @@ class PointCloudProcessor:
             centroid_sphere.translate(cluster['centroid'])
             centroid_sphere.paint_uniform_color(color)
             centroid_sphere.compute_vertex_normals()
-            geometries.append(centroid_sphere)
+            geometries.append(centroid_sphere)                  
             
             # Add coordinate frame at centroid
             frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.15)
@@ -555,8 +666,9 @@ class PointCloudProcessor:
             geometries.append(pcd)
         
         print(f"Visualizing {len(self.clusters_boxxes)} clusters with centroids and main bounding box")
-        o3d.visualization.draw_geometries(geometries)
-    
+        print(f"Global centroid at: {self.big_box['center']}")
+        o3d.visualization.draw_geometries(geometries)   
+
     def create_robot_frame(self, position, yaw, name, size=0.1):
         robot_body = o3d.geometry.TriangleMesh.create_cylinder(radius=size/2, height=size/3)
         frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=size*1.5)
@@ -575,6 +687,125 @@ class PointCloudProcessor:
             geom.translate(position)
         return [robot_body, frame, arrow]
     
+    def visualize_cluster_boxxes_with_new_centroids(self, new_centroids, center_2d, radius_circle):
+        """
+        Visualize clusters with both original centroids and new centroids positioned on circle.
+        Shows the circle, connecting lines, and robot frames.
+        """
+        if len(self.clusters_boxxes) == 0:
+            print("No clusters available. Run create_clusters_boxxes() first.")
+            return
+        
+        if new_centroids is None or len(new_centroids) == 0:
+            print("No new centroids provided.")
+            return
+        
+        geometries = []
+        
+        # Add main big box (wireframe in blue)
+        if self.big_box is not None:
+            big_bbox = o3d.geometry.AxisAlignedBoundingBox(
+                min_bound=self.big_box['min_bound'],
+                max_bound=self.big_box['max_bound']
+            )
+            big_bbox.color = [0, 0, 1]  # Blue
+            geometries.append(big_bbox)
+            
+            # Add circle center sphere (white)
+            center_sphere = o3d.geometry.TriangleMesh.create_sphere(radius=0.02)
+            center_sphere.translate(center_2d)
+            center_sphere.paint_uniform_color([1, 1, 1])
+            center_sphere.compute_vertex_normals()
+            geometries.append(center_sphere)
+            
+            # Add coordinate frame at circle center
+            center_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.2)
+            center_frame.translate(center_2d)
+            geometries.append(center_frame)
+        
+        # Create circle visualization
+        num_points = 100
+        angles = np.linspace(0, 2 * np.pi, num_points)
+        circle_points = []
+        for angle in angles:
+            x = center_2d[0] + radius_circle * np.cos(angle)
+            y = center_2d[1] + radius_circle * np.sin(angle)
+            z = center_2d[2]
+            circle_points.append([x, y, z])
+        
+        circle_points = np.array(circle_points)
+        lines = [[i, (i + 1) % num_points] for i in range(num_points)]
+        circle_line_set = o3d.geometry.LineSet()
+        circle_line_set.points = o3d.utility.Vector3dVector(circle_points)
+        circle_line_set.lines = o3d.utility.Vector2iVector(lines)
+        circle_line_set.colors = o3d.utility.Vector3dVector([[0.5, 0.5, 0.5]] * len(lines))
+        geometries.append(circle_line_set)
+        
+        # Color palette for clusters
+        colors = [
+            [1, 0, 0],      # Red
+            [0, 1, 0],      # Green
+            [1, 1, 0],      # Yellow
+            [1, 0, 1],      # Magenta
+            [0, 1, 1],      # Cyan
+            [1, 0.5, 0],    # Orange
+            [0.5, 0, 1],    # Purple
+            [0, 0.5, 0.5],  # Teal
+        ]
+        
+        for idx, cluster in enumerate(self.clusters_boxxes):
+            color = colors[idx % len(colors)]
+            
+            # Original cluster bounding box (semi-transparent)
+            cluster_bbox = o3d.geometry.AxisAlignedBoundingBox(
+                min_bound=cluster['min_bound'],
+                max_bound=cluster['max_bound']
+            )
+            cluster_bbox.color = color
+            geometries.append(cluster_bbox)
+            
+            # Original centroid (small sphere)
+            old_centroid = cluster['centroid']
+            old_centroid_sphere = o3d.geometry.TriangleMesh.create_sphere(radius=0.01)
+            old_centroid_sphere.translate(old_centroid)
+            old_centroid_sphere.paint_uniform_color(color)
+            old_centroid_sphere.compute_vertex_normals()
+            geometries.append(old_centroid_sphere)
+            
+            # New centroid on circle (larger sphere)
+            if idx < len(new_centroids):
+                new_centroid = new_centroids[idx]
+                new_centroid_sphere = o3d.geometry.TriangleMesh.create_sphere(radius=0.02)
+                new_centroid_sphere.translate(new_centroid)
+                new_centroid_sphere.paint_uniform_color(color)
+                new_centroid_sphere.compute_vertex_normals()
+                geometries.append(new_centroid_sphere)
+                
+                # Add coordinate frame at new centroid
+                new_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.15)
+                new_frame.translate(new_centroid)
+                geometries.append(new_frame)
+                
+                # Line connecting old and new centroids
+                line_points = np.array([old_centroid, new_centroid])
+                line = o3d.geometry.LineSet()
+                line.points = o3d.utility.Vector3dVector(line_points)
+                line.lines = o3d.utility.Vector2iVector([[0, 1]])
+                line.colors = o3d.utility.Vector3dVector([color])
+                geometries.append(line)
+        
+        # Add original point cloud if available
+        if len(self.point_t) > 0:
+            points = np.array([p[0] for p in self.point_t], dtype=float)
+            colors_pc = np.array([p[2] for p in self.point_t], dtype=float)
+            pcd = o3d.geometry.PointCloud()
+            pcd.points = o3d.utility.Vector3dVector(points)
+            pcd.colors = o3d.utility.Vector3dVector(colors_pc)
+            geometries.append(pcd)
+        
+        print(f"Visualizing {len(self.clusters_boxxes)} clusters with repositioned centroids")
+        print(f"Circle center: {center_2d}, radius: {radius_circle}")
+        o3d.visualization.draw_geometries(geometries)
     
 def main():
     ply_directory = "/ros2_ws/src/working_directory/point_cloud/filtered_ply"
