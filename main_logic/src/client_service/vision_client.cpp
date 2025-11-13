@@ -56,12 +56,6 @@ bool VisionClient::wait_for_tick(double timeout_sec)
 {
     RCLCPP_INFO(this->get_logger(), "Waiting for tick signal (timeout: %.1fs)...", timeout_sec);
     
-    // Reset tick flag before waiting
-    {
-        std::lock_guard<std::mutex> lock(tick_mutex_);
-        tick_received_ = false;
-    }
-    
     auto start_time = std::chrono::steady_clock::now();
     auto timeout_duration = std::chrono::duration<double>(timeout_sec);
     
@@ -74,7 +68,8 @@ bool VisionClient::wait_for_tick(double timeout_sec)
         {
             std::lock_guard<std::mutex> lock(tick_mutex_);
             if (tick_received_) {
-                RCLCPP_INFO(this->get_logger(), " Tick received, continuing...");
+                RCLCPP_INFO(this->get_logger(), "Tick received, continuing...");
+                tick_received_ = false; // Reset after consuming
                 return true;
             }
         }
@@ -127,13 +122,6 @@ bool VisionClient::trigger_detection(const std::string& object_name, double time
 
     if (response->success) {
         RCLCPP_INFO(this->get_logger(), "Detection service successful: %s", response->message.c_str());
-        
-        // Wait for tick if requested
-        if (wait_for_tick) {
-            if (!this->wait_for_tick(timeout_sec * 2)) {
-                RCLCPP_WARN(this->get_logger(), "Detection completed but tick not received");
-            }
-        }
     } else {
         RCLCPP_WARN(this->get_logger(), "Detection service failed: %s", response->message.c_str());
     }
@@ -174,13 +162,6 @@ bool VisionClient::trigger_pcl(double timeout_sec, bool wait_for_tick)
 
     if (response->success) {
         RCLCPP_INFO(this->get_logger(), "PCL service successful: %s", response->message.c_str());
-        
-        // Wait for tick if requested
-        if (wait_for_tick) {
-            if (!this->wait_for_tick(timeout_sec * 2)) {
-                RCLCPP_WARN(this->get_logger(), "PCL capture completed but tick not received");
-            }
-        }
     } else {
         RCLCPP_WARN(this->get_logger(), "PCL service failed: %s", response->message.c_str());
     }
@@ -219,12 +200,6 @@ bool VisionClient::trigger_filter_pcl(double timeout_sec, bool wait_for_tick)
 
     if (response->success) {
         RCLCPP_INFO(this->get_logger(), "Filter PCL service successful: %s", response->message.c_str());
-        
-        if (wait_for_tick) {
-            if (!this->wait_for_tick(timeout_sec * 2)) {
-                RCLCPP_WARN(this->get_logger(), "PCL filtering completed but tick not received");
-            }
-        }
     } else {
         RCLCPP_WARN(this->get_logger(), "Filter PCL service failed: %s", response->message.c_str());
     }

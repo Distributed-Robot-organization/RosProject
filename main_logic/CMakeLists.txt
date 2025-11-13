@@ -11,8 +11,10 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_srvs REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(geometry_msgs REQUIRED)
 find_package(vision_system REQUIRED)
 find_package(coordination REQUIRED)
+find_package(navigation_system REQUIRED)
 include_directories(include)
 # add here the include client ======================================
 
@@ -21,6 +23,9 @@ add_library(coordination_client_lib
 )
 add_library(vision_client_lib
   src/client_service/vision_client.cpp
+)
+add_library(navigation_client_lib
+  src/client_service/navigation_client.cpp
 )
 
 ament_target_dependencies(vision_client_lib
@@ -37,6 +42,14 @@ ament_target_dependencies(coordination_client_lib
   coordination
 )
 
+ament_target_dependencies(navigation_client_lib
+  rclcpp
+  std_srvs
+  std_msgs
+  geometry_msgs
+  navigation_system
+)
+
 install(TARGETS coordination_client_lib
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
@@ -50,14 +63,23 @@ install(TARGETS vision_client_lib
   RUNTIME DESTINATION bin
 )
 
+install(TARGETS navigation_client_lib
+  ARCHIVE DESTINATION lib
+  LIBRARY DESTINATION lib
+  RUNTIME DESTINATION bin
+)
+
 
 # ==============================================
 # example ======================================
 add_executable(vision_client_example
-  src/vision_client_example.cpp
+  src/example/vision_client_example.cpp
 )
 add_executable(coordination_client_example
-  src/coordination_client_example.cpp
+  src/example/coordination_client_example.cpp
+)
+add_executable(navigation_client_example
+  src/example/navigation_client_example.cpp
 )
 
 target_link_libraries(vision_client_example
@@ -66,6 +88,9 @@ target_link_libraries(vision_client_example
 target_link_libraries(coordination_client_example
   coordination_client_lib
 )
+target_link_libraries(navigation_client_example
+  navigation_client_lib
+)
 
 ament_target_dependencies(vision_client_example
   rclcpp
@@ -73,10 +98,15 @@ ament_target_dependencies(vision_client_example
 ament_target_dependencies(coordination_client_example
   rclcpp
 )
+ament_target_dependencies(navigation_client_example
+  rclcpp
+  geometry_msgs
+)
 
 install(TARGETS 
   vision_client_example 
   coordination_client_example
+  navigation_client_example
 
   DESTINATION lib/${PROJECT_NAME}
 )
@@ -84,12 +114,20 @@ install(TARGETS
 
 # Export dependencies
 ament_export_include_directories(include)
-ament_export_libraries(vision_client_lib)
+ament_export_libraries(
+    vision_client_lib 
+    coordination_client_lib 
+    navigation_client_lib)
+
+    
 ament_export_dependencies(
   rclcpp
   std_srvs
   std_msgs
+  geometry_msgs
   vision_system
+  coordination
+  navigation_system
 )
 
 # Install headers
