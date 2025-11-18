@@ -10,7 +10,7 @@ from std_srvs.srv import Trigger
 from geometry_msgs.msg import Pose, PoseArray
 from coordination.recostruction import PointCloudProcessor
 from coordination.build_mesh import BuildMesh
-from std_msgs.msg import Bool
+from std_msgs.msg import Bool, Float32
 
 import sys, yaml
 from geometry_msgs.msg import PoseWithCovarianceStamped
@@ -22,7 +22,7 @@ class CoordinatorPcl(Node):
         self.ply_directory = "/ros2_ws/src/working_directory/point_cloud/filtered_ply"
         # where to save processed .ply files --> in mesh folder save also the .ply and the mesh files
         self.ply_save_directory = "/ros2_ws/src/working_directory/mesh"
-        self.yaml_file = "/ros2_ws/src/vision_system/object_params.yaml"
+        self.yaml_file = "/ros2_ws/src/main_logic/config/object_params.yaml"
         self.declare_parameter("robot_namespaces", ["shelfino1"])
         self.robot_namespaces = self.get_parameter("robot_namespaces").value
         self.get_logger().info(f"Robots found: {self.robot_namespaces}")
@@ -36,8 +36,8 @@ class CoordinatorPcl(Node):
         10
         )
         
-        self.next_array_pose = self.create_publisher(PoseArray, "next_array_pose", 10)
-        
+        self.next_array_pose = self.create_publisher(PoseArray, "coordination/next_array_pose", 10)
+        self.mean_observation_pub = self.create_publisher(Float32, "coordination/mean_observation_object", 10)
         self.tick_service_coordination_pub = self.create_publisher(Bool, "coordination/tick_service_coordination", 10)
         
         self.trigger_coordination_srv = self.create_service(
@@ -82,7 +82,7 @@ class CoordinatorPcl(Node):
         try:   
             
             # Run full pipeline
-            new_points, global_centroid = self.processor.full_pipeline(self.robot_poses)
+            new_points, global_centroid, mean_observation = self.processor.full_pipeline(self.robot_poses)
             
             pose_array = PoseArray()
             pose_array.header.stamp = self.get_clock().now().to_msg()
@@ -103,8 +103,13 @@ class CoordinatorPcl(Node):
                 pose.position.z = float(point[2])
                 pose.orientation.w = 1.0 # Neutral orientation
                 pose_array.poses.append(pose)
-                
             
+            # Publish mean observation
+            if mean_observation is not None:
+                mean_obs_msg = Float32()
+                mean_obs_msg.data = float(mean_observation)
+                self.mean_observation_pub.publish(mean_obs_msg)
+                self.get_logger().info(f"Published mean observation: {mean_observation:.4f}")
                 
             # Publish PoseArray
             self.next_array_pose.publish(pose_array)

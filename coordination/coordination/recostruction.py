@@ -62,11 +62,154 @@ class PointCloudProcessor:
             search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=voxel_size * 5, max_nn=30))
         pcd_uniform.orient_normals_consistent_tangent_plane(30)
         return pcd_uniform
+        
+    def remove_floor_points_ransac(self, pcd, distance_threshold=0.01, ransac_n=3, num_iterations=1000):
+        points = np.asarray(pcd.points)
+        
+        if len(points) == 0:
+            return pcd
+        
+        # Use RANSAC to detect the dominant plane
+        plane_model, inliers = pcd.segment_plane(
+            distance_threshold=distance_threshold,
+            ransac_n=ransac_n,
+            num_iterations=num_iterations
+        )
+        
+        [a, b, c, d] = plane_model
+        print(f"Detected plane equation: {a:.3f}x + {b:.3f}y + {c:.3f}z + {d:.3f} = 0")
+        
+        # Check if it's a horizontal plane (normal should be mostly vertical)
+        normal = np.array([a, b, c])
+        normal = normal / np.linalg.norm(normal)
+        
+        # Angle between plane normal and vertical axis (z-axis)
+        vertical = np.array([0, 0, 1])
+        angle = np.arccos(np.abs(np.dot(normal, vertical)))
+        angle_deg = np.degrees(angle)
+        
+        print(f"Plane normal: {normal}")
+        print(f"Angle from vertical: {angle_deg:.1f}°")
+        
+        # Only remove if it's approximately horizontal (angle < 15 degrees)
+        if angle_deg < 15:
+            # Remove the inliers (floor points)
+            pcd_no_floor = pcd.select_by_index(inliers, invert=True)
+            
+            removed_count = len(inliers)
+            kept_count = len(pcd_no_floor.points)
+            
+            print(f"Removed {removed_count} floor points (kept {kept_count} points)")
+            return pcd_no_floor
+        else:
+            print(f"Detected plane is not horizontal (angle {angle_deg:.1f}°), keeping all points")
+            return pcd
+
+    def remove_floor_points_histogram(self, pcd, bin_size=0.01, floor_percentile=10, z_margin=0.02):
+        points = np.asarray(pcd.points)
+        
+        if len(points) == 0:
+            return pcd
+        
+        z_values = points[:, 2]
+        
+        # Create histogram of Z values
+        hist, bin_edges = np.histogram(z_values, bins=int((z_values.max() - z_values.min()) / bin_size))
+        
+        # Find the Z level with most points (likely the floor)
+        max_bin_idx = np.argmax(hist)
+        floor_level = (bin_edges[max_bin_idx] + bin_edges[max_bin_idx + 1]) / 2
+        
+        print(f"Detected floor level at Z = {floor_level:.4f} (bin with {hist[max_bin_idx]} points)")
+        
+        # Keep points above floor + margin
+        threshold = floor_level + z_margin
+        mask = points[:, 2] > threshold
+        filtered_points = points[mask]
+        
+        # Create new point cloud
+        pcd_no_floor = o3d.geometry.PointCloud()
+        pcd_no_floor.points = o3d.utility.Vector3dVector(filtered_points)
+        
+        # Copy colors and normals if available
+        if pcd.has_colors():
+            colors = np.asarray(pcd.colors)
+            pcd_no_floor.colors = o3d.utility.Vector3dVector(colors[mask])
+        
+        if pcd.has_normals():
+            normals = np.asarray(pcd.normals)
+            pcd_no_floor.normals = o3d.utility.Vector3dVector(normals[mask])
+        
+        removed_count = len(points) - len(filtered_points)
+        print(f"Removed {removed_count} floor points (kept {len(filtered_points)} points)")
+        
+        return pcd_no_floor
+
+    def remove_floor_points_adaptive(self, pcd, num_bins=50, prominence_factor=2.0, z_margin=0.02):
+        from scipy.signal import find_peaks
+        
+        points = np.asarray(pcd.points)
+        
+        if len(points) == 0:
+            return pcd
+        
+        z_values = points[:, 2]
+        
+        # Create histogram
+        hist, bin_edges = np.histogram(z_values, bins=num_bins)
+        bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+        
+        # Find peaks in histogram
+        peaks, properties = find_peaks(hist, prominence=hist.max() / prominence_factor)
+        
+        if len(peaks) == 0:
+            print("No prominent peaks found, using minimum Z value")
+            floor_level = z_values.min()
+        else:
+            # The floor is likely the lowest prominent peak
+            floor_peak_idx = peaks[0]
+            floor_level = bin_centers[floor_peak_idx]
+            print(f"Found {len(peaks)} prominent levels, floor at Z = {floor_level:.4f}")
+        
+        # Keep points above floor + margin
+        threshold = floor_level + z_margin
+        mask = points[:, 2] > threshold
+        filtered_points = points[mask]
+        
+        # Create new point cloud
+        pcd_no_floor = o3d.geometry.PointCloud()
+        pcd_no_floor.points = o3d.utility.Vector3dVector(filtered_points)
+        
+        # Copy colors and normals if available
+        if pcd.has_colors():
+            colors = np.asarray(pcd.colors)
+            pcd_no_floor.colors = o3d.utility.Vector3dVector(colors[mask])
+        
+        if pcd.has_normals():
+            normals = np.asarray(pcd.normals)
+            pcd_no_floor.normals = o3d.utility.Vector3dVector(normals[mask])
+        
+        removed_count = len(points) - len(filtered_points)
+        print(f"Removed {removed_count} floor points (kept {len(filtered_points)} points)")
+        
+        return pcd_no_floor
+    
+    def remove_floor_points(self, pcd, method='histogram', **kwargs):
+
+        if method == 'ransac':
+            return self.remove_floor_points_ransac(pcd, **kwargs)
+        elif method == 'histogram':
+            return self.remove_floor_points_histogram(pcd, **kwargs)
+        elif method == 'adaptive':
+            return self.remove_floor_points_adaptive(pcd, **kwargs)
+        else:
+            raise ValueError(f"Unknown method: {method}")
     
     def process_all_pointclouds(self):
         processed = []
         for pcd in self.raw_clouds:
             pcd_proc = self.clean_and_smooth_point_cloud(pcd)
+            pcd_proc = self.remove_floor_points(pcd_proc)
             print(f"Processed points: {len(pcd_proc.points)}")
             processed.append(pcd_proc)
         return processed
@@ -243,6 +386,15 @@ class PointCloudProcessor:
         
         print(f"Created {len(self.clusters_boxxes)} clusters from low-observation boxes")
         return self.clusters_boxxes
+    
+    def avg_obs_all_cells(self):
+        observations = [box['avg_observation'] for box in self.boxxes if box['avg_observation'] is not None]
+        if len(observations) == 0:
+            print("No observations available to calculate average.")
+            return None
+        mean_observation = np.mean(observations)
+        print(f"Average observation across all cells: {mean_observation}")
+        return mean_observation
     
     def save_boxxes_json(self, filename="boxxes_object.json"):
         if len(self.boxxes) == 0:
@@ -464,12 +616,13 @@ class PointCloudProcessor:
         
         new_centroids, center_2d, radius_circle = self.centorids_on_circle(objs_names_yaml, object_type_ply)
         self.visualize_cluster_boxxes_with_new_centroids(new_centroids, center_2d, radius_circle)
-        
+        # compute average observation
+        mean_observation = self.avg_obs_all_cells()
         # save point and boxes
         self.save_point_cloud()
         self.save_boxxes_json()
         self.eliminate_ply_files()
-        return new_centroids, self.big_box['center']      
+        return new_centroids, self.big_box['center'], mean_observation      
         
       
     def visualize_point_t(self):

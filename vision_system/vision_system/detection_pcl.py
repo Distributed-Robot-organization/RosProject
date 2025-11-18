@@ -7,6 +7,7 @@ from std_srvs.srv import Trigger
 from sensor_msgs.msg import Image, PointCloud2, CameraInfo
 from std_msgs.msg import Header
 import geometry_msgs.msg
+from nav_msgs.msg import Odometry
 import numpy as np
 from cv_bridge import CvBridge
 import cv2
@@ -63,6 +64,7 @@ class ObjectDetectionNode(Node):
         detection_results_topic = self.get_parameter('detection_results_topic').value
         point_cloud_topic = self.get_parameter('point_cloud_topic').value
         camera_info_topic = self.get_parameter('info_camera').value
+        odom_topic = f'/{robot_ns}/odom'
         self.z_ground_offset = self.get_parameter('z_ground_offset').value
         self.use_half_precision = self.get_parameter('use_half_precision').value
         self.yolo_imgsz = self.get_parameter('yolo_imgsz').value
@@ -89,6 +91,7 @@ class ObjectDetectionNode(Node):
         qos_sensor = QoSProfile(reliability=ReliabilityPolicy.BEST_EFFORT,
                                durability=DurabilityPolicy.VOLATILE,
                                history=HistoryPolicy.KEEP_LAST, depth=1)
+        
         qos_reliable = QoSProfile(reliability=ReliabilityPolicy.RELIABLE,
                                  durability=DurabilityPolicy.VOLATILE,
                                  history=HistoryPolicy.KEEP_LAST, depth=5)
@@ -98,6 +101,7 @@ class ObjectDetectionNode(Node):
         self.create_subscription(Image, depth_topic, self.depth_callback, qos_sensor)
         self.create_subscription(PointCloud2, point_cloud_topic, self.pointcloud_callback, qos_sensor)
         self.create_subscription(CameraInfo, camera_info_topic, self.camera_info_callback, qos_reliable)
+        self.create_subscription(Odometry, odom_topic, self.odom_callback, qos_sensor)
         
         # Publishers
         self.image_publisher = self.create_publisher(Image, image_detection_topic, qos_reliable)
@@ -133,6 +137,9 @@ class ObjectDetectionNode(Node):
         # Camera intrinsics
         self.fx = self.fy = 525.0
         self.cx_optical = self.cy_optical = None
+        
+        # Robot position tracking
+        self.current_robot_position = None
         
         self.get_logger().info(f"Object Detection Node initialized for robot: {robot_ns}")
         self.get_logger().info("READY TO DETECT FILTER AND SAVE!")
@@ -238,6 +245,27 @@ class ObjectDetectionNode(Node):
         return response
     
     # === TOPIC CALLBACKS ===
+    def odom_callback(self, odom_msg: Odometry) -> None:
+        try:
+            position = {
+                'x': odom_msg.pose.pose.position.x,
+                'y': odom_msg.pose.pose.position.y,
+                'z': odom_msg.pose.pose.position.z,
+                'timestamp': odom_msg.header.stamp,
+                'orientation': {
+                    'x': odom_msg.pose.pose.orientation.x,
+                    'y': odom_msg.pose.pose.orientation.y,
+                    'z': odom_msg.pose.pose.orientation.z,
+                    'w': odom_msg.pose.pose.orientation.w
+                }
+            }
+            
+            self.current_robot_position = position
+            
+            
+        except Exception as e:
+            self.get_logger().error(f"Odometry callback error: {e}")
+
     def camera_info_callback(self, info: CameraInfo) -> None:
         if self.cx_optical is None and len(info.k) >= 5:
             self.fx, self.fy = info.k[0], info.k[4]
@@ -511,7 +539,7 @@ class ObjectDetectionNode(Node):
                 directory = "/ros2_ws/src/working_directory/point_cloud/raw_ply"
             
             timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = os.path.join(directory, f"object_{label}_{obj_id}_{timestamp}.ply")
+            filename = os.path.join(directory, f"{label}_{obj_id}_{timestamp}.ply")
             
             with open(filename, 'w') as f:
                 f.write("ply\nformat ascii 1.0\n")
@@ -571,8 +599,13 @@ class ObjectDetectionNode(Node):
             o3d_pcd = pcd
         else:
             raise TypeError(f"Unsupported point cloud type: {type(pcd)}")
-        #remove back ground
+        
+        # Remove background based on plane detection
         o3d_pcd = self.remove_plane_background(o3d_pcd, distance_threshold=0.03) 
+        
+        # Remove background based on robot position
+        o3d_pcd = self.remove_background_from_robot(o3d_pcd, distance_threshold=6.0)
+        
         # Remove outliers
         pcd_clean, _ = o3d_pcd.remove_statistical_outlier(nb_neighbors=20, std_ratio=2.0)
         
@@ -596,7 +629,6 @@ class ObjectDetectionNode(Node):
         return pcd_uniform
     
     def remove_plane_background(self, o3d_pcd, distance_threshold=0.02, ransac_n=3, num_iterations=1000, plane_type='floor'):
-
         # 1. RANSAC to segment the plane
         plane_model, inliers = o3d_pcd.segment_plane(
             distance_threshold=distance_threshold,
@@ -632,6 +664,54 @@ class ObjectDetectionNode(Node):
                     )
 
         return pcd_foreground
+    
+    def remove_background_from_robot(self, o3d_pcd, distance_threshold=6.0):
+        if self.current_robot_position is None:
+            self.get_logger().warn("No robot position available, skipping robot-based background removal")
+            return o3d_pcd
+        
+        if len(o3d_pcd.points) == 0:
+            return o3d_pcd
+        
+        # Get robot position in odom frame
+        robot_x = self.current_robot_position['x']
+        robot_y = self.current_robot_position['y']
+        robot_z = self.current_robot_position['z']
+        
+        # Convert point cloud to numpy array
+        points = np.asarray(o3d_pcd.points)
+        
+        # Calculate distance from robot to each point (using only x,y for horizontal distance)
+        distances = np.sqrt(
+            (points[:, 0] - robot_x) ** 2 + 
+            (points[:, 1] - robot_y) ** 2
+        )
+        
+        # Filter points within distance threshold
+        mask = distances <= distance_threshold
+        
+        # Create filtered point cloud
+        filtered_pcd = o3d.geometry.PointCloud()
+        filtered_pcd.points = o3d.utility.Vector3dVector(points[mask])
+        
+        # Copy normals if they exist
+        if o3d_pcd.has_normals():
+            normals = np.asarray(o3d_pcd.normals)
+            filtered_pcd.normals = o3d.utility.Vector3dVector(normals[mask])
+        
+        # Copy colors if they exist
+        if o3d_pcd.has_colors():
+            colors = np.asarray(o3d_pcd.colors)
+            filtered_pcd.colors = o3d.utility.Vector3dVector(colors[mask])
+        
+        removed_count = len(points) - len(filtered_pcd.points)
+        self.get_logger().info(
+            f"Removed {removed_count} background points beyond {distance_threshold}m from robot "
+            f"(at position [{robot_x:.2f}, {robot_y:.2f}, {robot_z:.2f}])"
+        )
+        
+        return filtered_pcd
+    
     def __del__(self):
         if self.cuda_available:
             torch.cuda.empty_cache()

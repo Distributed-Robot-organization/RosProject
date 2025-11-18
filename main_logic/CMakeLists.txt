@@ -15,6 +15,7 @@ find_package(geometry_msgs REQUIRED)
 find_package(vision_system REQUIRED)
 find_package(coordination REQUIRED)
 find_package(navigation_system REQUIRED)
+find_package(yaml-cpp REQUIRED)
 include_directories(include)
 # add here the include client ======================================
 
@@ -72,45 +73,73 @@ install(TARGETS navigation_client_lib
 
 # ==============================================
 # example ======================================
-add_executable(vision_client_example
-  src/example/vision_client_example.cpp
-)
-add_executable(coordination_client_example
-  src/example/coordination_client_example.cpp
-)
-add_executable(navigation_client_example
-  src/example/navigation_client_example.cpp
+# add_executable(vision_client_example
+#   src/example/vision_client_example.cpp
+# )
+# add_executable(coordination_client_example
+#   src/example/coordination_client_example.cpp
+# )
+# add_executable(navigation_client_example
+#   src/example/navigation_client_example.cpp
+# )
+
+# target_link_libraries(vision_client_example
+#   vision_client_lib
+# )
+# target_link_libraries(coordination_client_example
+#   coordination_client_lib
+# )
+# target_link_libraries(navigation_client_example
+#   navigation_client_lib
+# )
+
+# ament_target_dependencies(vision_client_example
+#   rclcpp
+# )
+# ament_target_dependencies(coordination_client_example
+#   rclcpp
+# )
+# ament_target_dependencies(navigation_client_example
+#   rclcpp
+#   geometry_msgs
+# )
+
+# install(TARGETS 
+#   vision_client_example 
+#   coordination_client_example
+#   navigation_client_example
+
+#   DESTINATION lib/${PROJECT_NAME}
+# )
+# ======================================
+
+# main logic
+add_executable(main_logic_node
+  src/main_logic.cpp
 )
 
-target_link_libraries(vision_client_example
-  vision_client_lib
-)
-target_link_libraries(coordination_client_example
+target_link_libraries(main_logic_node
   coordination_client_lib
-)
-target_link_libraries(navigation_client_example
+  vision_client_lib
   navigation_client_lib
+  yaml-cpp
 )
 
-ament_target_dependencies(vision_client_example
+ament_target_dependencies(main_logic_node
   rclcpp
-)
-ament_target_dependencies(coordination_client_example
-  rclcpp
-)
-ament_target_dependencies(navigation_client_example
-  rclcpp
+  std_srvs
+  std_msgs
   geometry_msgs
+  vision_system
+  coordination
+  navigation_system
 )
 
-install(TARGETS 
-  vision_client_example 
-  coordination_client_example
-  navigation_client_example
+target_include_directories(main_logic_node PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
+install(TARGETS main_logic_node
   DESTINATION lib/${PROJECT_NAME}
 )
-# ======================================
 
 # Export dependencies
 ament_export_include_directories(include)
@@ -131,12 +160,12 @@ ament_export_dependencies(
 )
 
 # Install headers
+install(DIRECTORY launch config
+  DESTINATION share/${PROJECT_NAME}
+)
+
 install(DIRECTORY include/
   DESTINATION include
-)
-install(DIRECTORY
-  launch include
-  DESTINATION share/${PROJECT_NAME}
 )
 
 if(BUILD_TESTING)

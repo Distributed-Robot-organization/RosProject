@@ -15,16 +15,15 @@
 namespace main_logic
 {
 
-class VisionClient : public rclcpp::Node
+class VisionClient
 {
 public:
-    explicit VisionClient(const std::string& robot_namespace = "shelfino1");
+    VisionClient(rclcpp::Node *node, const std::string& robot_namespace = "shelfino1");
+    
 
-    bool trigger_detection(const std::string& object_name, double timeout_sec = 5.0, bool wait_for_tick = true);
-    bool trigger_pcl(double timeout_sec = 5.0, bool wait_for_tick = true);
-    bool trigger_filter_pcl(double timeout_sec = 5.0, bool wait_for_tick = true);
-
-    bool wait_for_tick(double timeout_sec = 10.0);
+    void trigger_detection(const std::string& object_name, double timeout_sec = 5.0);
+    void trigger_pcl(double timeout_sec = 5.0);
+    void trigger_filter_pcl(double timeout_sec = 5.0);
 
     std::string get_last_detection_message() const { return last_detection_message_; }
     std::string get_last_pcl_message() const { return last_pcl_message_; }
@@ -36,9 +35,6 @@ private:
     rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr pcl_client_;
     rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr filter_pcl_client_;
 
-    // Tick subscriber
-    rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr tick_subscriber_;
-
     // Robot namespace
     std::string robot_namespace_;
 
@@ -47,21 +43,8 @@ private:
     std::string last_pcl_message_;
     std::string last_filter_pcl_message_;
 
-    // Tick synchronization
-    std::atomic<bool> tick_received_;
-    std::mutex tick_mutex_;
-    std::condition_variable tick_cv_;
-
-    /**
-     * @brief Callback for tick messages
-     */
-    void tick_callback(const std_msgs::msg::Bool::SharedPtr msg);
-
-    template<typename ServiceT>
-    bool wait_for_service(
-        typename rclcpp::Client<ServiceT>::SharedPtr client,
-        const std::string& service_name,
-        double timeout_sec);
+    // Node reference
+    rclcpp::Node *node_;
 };
 
 } // namespace main_logic

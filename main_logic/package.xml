@@ -16,6 +16,7 @@
   <depend>vision_system</depend>
   <depend>coordination</depend>
   <depend>navigation_system</depend>
+  <depend>yaml-cpp</depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
