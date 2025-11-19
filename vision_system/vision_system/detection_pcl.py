@@ -539,7 +539,7 @@ class ObjectDetectionNode(Node):
                 directory = "/ros2_ws/src/working_directory/point_cloud/raw_ply"
             
             timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = os.path.join(directory, f"{label}_{obj_id}_{timestamp}.ply")
+            filename = os.path.join(directory, f"{label}_{obj_id}.ply")
             
             with open(filename, 'w') as f:
                 f.write("ply\nformat ascii 1.0\n")
@@ -579,8 +579,8 @@ class ObjectDetectionNode(Node):
             
             self.get_logger().info(f"Filtered point cloud: {len(filtered_points)} points remaining")
             
-            # Save the filtered point cloud
-            self.save_object_pointcloud(self.ply_filtered_dir, f"{obj['label']}_filtered", filtered_points, obj['id'])
+            # Save the filtered point cloud with robot name
+            self.save_object_pointcloud(self.ply_filtered_dir, f"{obj['label']}_filtered_{self.robot_namespace}", filtered_points, obj['id'])
     
     def clean_and_smooth_point_cloud(self, pcd):
         # Convert list of dictionaries to Open3D PointCloud if needed

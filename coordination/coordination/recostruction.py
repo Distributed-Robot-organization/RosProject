@@ -536,7 +536,13 @@ class PointCloudProcessor:
             return None
         
         first_file = ply_files[0].stem  # Get filename without extension
-        object_type = first_file.split('_')[0]  # Get first word
+        
+        if "_filtered" in first_file:
+            object_type = first_file.split("_filtered")[0]
+        else:
+            # Fallback: take everything before last underscore
+            parts = first_file.split('_')
+            object_type = '_'.join(parts[:-1]) if len(parts) > 1 else first_file
         
         print(f"Detected object type: '{object_type}' from file: {ply_files[0].name}")
         return object_type.lower()

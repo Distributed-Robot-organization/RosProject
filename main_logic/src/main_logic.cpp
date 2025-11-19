@@ -445,6 +445,53 @@ private:
         }
     }
 
+    std::vector<geometry_msgs::msg::Point> sort_goals_by_distance(const std::vector<geometry_msgs::msg::Pose>& current_poses, const std::vector<geometry_msgs::msg::Point>& goals)
+    {
+        size_t n = goals.size();
+        std::vector<geometry_msgs::msg::Point> sorted_goals(n);
+        std::vector<bool> goal_assigned(n, false);
+        std::vector<bool> robot_assigned(n, false);
+
+        for (size_t i = 0; i < n; i++) {
+            double min_distance = std::numeric_limits<double>::max();
+            size_t best_robot_idx = 0;
+            size_t best_goal_idx = 0;
+
+            // Trova la coppia (robot, goal) non ancora assegnata con distanza minima
+            for (size_t i = 0; i < n; i++) {
+                if (robot_assigned[i]) continue;
+
+                for (size_t j = 0; j < n; j++) {
+                    if (goal_assigned[j]) continue;
+
+                    double dx = current_poses[i].position.x - goals[j].x;
+                    double dy = current_poses[i].position.y - goals[j].y;
+                    double distance = std::sqrt(dx*dx + dy*dy);
+
+                    if (distance < min_distance) {
+                        min_distance = distance;
+                        best_robot_idx = i;
+                        best_goal_idx = j;
+                    }
+                }
+            }
+
+            // Assegna il goal migliore al robot
+            sorted_goals[best_robot_idx] = goals[best_goal_idx];
+            goal_assigned[best_goal_idx] = true;
+            robot_assigned[best_robot_idx] = true;
+
+            RCLCPP_INFO(this->get_logger(), 
+                "Assigning to robot %s: goal [%.2f, %.2f] at distance %.2f",
+                robot_names_[best_robot_idx].c_str(),
+                goals[best_goal_idx].x,
+                goals[best_goal_idx].y,
+                min_distance);
+        }
+
+        return sorted_goals;
+    }
+
     void state_machine()
     {   
         int iteration = 0;
@@ -452,7 +499,7 @@ private:
         observation_mean = 0.0;
         // thresholds for state machine
         float observation_threshold = 5.0;
-        int itereation_thresh = 2;
+        int itereation_thresh = 10;
         
         if (!state_machine_ready_) {
             RCLCPP_WARN(this->get_logger(), "State machine not ready, wait state_machine_ready_ = true");
@@ -547,15 +594,15 @@ private:
                 return;
             }
             // 2b. Trigger PCL for all robots --> not usefull now
-            // RCLCPP_INFO(this->get_logger(), "=== Step 2b: Point Cloud Processing ===");
-            // publish_status("Point cloud processing step");
-            // reset_vision_ticks();
-            // trigger_all_pcl(timer_action);
+            RCLCPP_INFO(this->get_logger(), "=== Step 2b: Point Cloud Processing ===");
+            publish_status("Point cloud processing step");
+            reset_vision_ticks();
+            trigger_all_pcl(timer_action);
 
-            // if (!wait_or_fail([this](float t) { return wait_for_all_vision_ticks(t); }, 
-            //                 "Point cloud processing", timer_action)) {
-            //     return;
-            // }
+            if (!wait_or_fail([this](float t) { return wait_for_all_vision_ticks(t); }, 
+                            "Point cloud processing", timer_action)) {
+                return;
+            }
 
             // 2c. Trigger filter PCL for all robots
             RCLCPP_INFO(this->get_logger(), "=== Step 2c: Point Cloud Filtering ===");
@@ -621,6 +668,23 @@ private:
             center_obj.y = next_poses_.poses[0].position.y;
             center_obj.z = 0.0;
             RCLCPP_INFO(this->get_logger(), "Updated center object to: [%.2f, %.2f, %.2f]",center_obj.x, center_obj.y, center_obj.z);
+            
+            if (iteration == 0) {
+                target_goals = sort_goals_by_distance(target_poses, target_goals);
+            } else {
+                std::vector<geometry_msgs::msg::Pose> current_poses;
+                for (const auto& goal : target_goals) {
+                    geometry_msgs::msg::Pose pose;
+                    pose.position = goal;
+                    // // Orientamento verso il centro
+                    // double yaw = std::atan2(center_obj.y - goal.y, center_obj.x - goal.x);
+                    // pose.orientation.z = std::sin(yaw / 2.0);
+                    // pose.orientation.w = std::cos(yaw / 2.0);
+                    current_poses.push_back(pose);
+                }
+                target_goals = sort_goals_by_distance(current_poses, target_goals);
+            }
+
             iteration++;
             RCLCPP_INFO(this->get_logger(), "Updated iteration: %d", iteration);
         }

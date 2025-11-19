@@ -1,5 +1,5 @@
 
-cone:
+small_cone:
   radius: 4.0  # meters
 hydrant: 
   radius: 1.0  # meters
