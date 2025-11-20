@@ -445,10 +445,10 @@ private:
         }
     }
 
-    std::vector<geometry_msgs::msg::Point> sort_goals_by_distance(const std::vector<geometry_msgs::msg::Pose>& current_poses, const std::vector<geometry_msgs::msg::Point>& goals)
+    std::vector<geometry_msgs::msg::Pose> sort_goals_by_distance(const std::vector<geometry_msgs::msg::Pose>& current_poses, const std::vector<geometry_msgs::msg::Point>& goals)
     {
         size_t n = goals.size();
-        std::vector<geometry_msgs::msg::Point> sorted_goals(n);
+        std::vector<geometry_msgs::msg::Pose> sorted_goals(n);
         std::vector<bool> goal_assigned(n, false);
         std::vector<bool> robot_assigned(n, false);
 
@@ -476,8 +476,9 @@ private:
                 }
             }
 
-            // Assegna il goal migliore al robot
-            sorted_goals[best_robot_idx] = goals[best_goal_idx];
+            // Assegna il goal migliore al robot (convert Point to Pose)
+            sorted_goals[best_robot_idx].position = goals[best_goal_idx];
+            sorted_goals[best_robot_idx].orientation.w = 1.0;
             goal_assigned[best_goal_idx] = true;
             robot_assigned[best_robot_idx] = true;
 
@@ -516,6 +517,20 @@ private:
             state_machine_ready_ = false;
             return;
         }
+
+        if (iteration ==0) {
+            robot_activated = robot_names_;
+        }
+        else if (current_poses.size() < robot_names_.size()) {
+            // robot activate deve avere un numero di parametri pari alla sua quantita: robot_names_.size - current_poses.size()
+            robot_activated = std::vector<std::string>(
+                robot_names_.begin(), 
+                robot_names_.begin() + (robot_names_.size() - current_poses.size())
+            );
+        }
+        else {
+            robot_activated = robot_names_;
+        }
         
         while (observation_mean < observation_threshold && iteration < itereation_thresh) {
 
@@ -529,8 +544,8 @@ private:
                 reset_navigation_ticks();
                 
                 try {
-                    for (const auto& robot_name : robot_names_) {
-                        target_poses.push_back(load_checkpoint_pose(robot_name));
+                    for (const auto& robot_name : robot_activated) {
+                        current_poses.push_back(load_checkpoint_pose(robot_name));
                     }
                 } catch (const std::exception& e) {
                     RCLCPP_ERROR(this->get_logger(), "Failed to load checkpoints: %s", e.what());
@@ -538,7 +553,7 @@ private:
                     return;
                 }
 
-                send_all_specific_path(target_poses, timer_action);
+                send_all_specific_path(current_poses, timer_action);
 
                 if (!wait_or_fail([this](float t) { return wait_for_all_navigation_ticks(t); }, 
                                 "Navigation to initial positions", timer_action)) {
@@ -555,18 +570,16 @@ private:
 
                 arc_center.x = center_obj.x;
                 arc_center.y = center_obj.y;
-                arc_center.z = 0.0;                
-                target_goals.clear();
-                for (size_t i = 0; i < robot_names_.size(); i++) {                    
-                    geometry_msgs::msg::Point goal;
-                    goal.x = next_poses_.poses[i + 1].position.x;
-                    goal.y = next_poses_.poses[i + 1].position.y;
-                    goal.z = 0.0;
-                    target_goals.push_back(goal);
+                arc_center.z = 0.0;
+                
+                std::vector<geometry_msgs::msg::Point> arc_goals;
+                for (size_t i = 0; i < robot_activated.size(); i++) {
+                    arc_goals.push_back(current_poses[i].position);
                     RCLCPP_INFO(this->get_logger(), "Robot %s arc goal: (%.2f, %.2f)", 
-                               robot_names_[i].c_str(), goal.x, goal.y);
-                }               
-                send_all_arc_path(arc_center, target_goals, radius_obj_, timer_action);
+                               robot_activated[i].c_str(), current_poses[i].position.x, current_poses[i].position.y);
+                }
+                
+                send_all_arc_path(arc_center, arc_goals, radius_obj_, timer_action);
                 if (!wait_or_fail([this](float t) { return wait_for_all_navigation_ticks(t); }, 
                                 "Navigation in arc paths", timer_action)) {
                     return;
@@ -629,62 +642,47 @@ private:
             RCLCPP_INFO(this->get_logger(), "Coordination completed successfully");
             // ==========================================================
             // SOLO PER TEST VALORI MANUALI, DISATTIVI TUTTO TRANNE STEP 1 e 5
-            observation_mean = 0.1;
+            // observation_mean = 0.1;
 
-            // 2. Next poses manuale
-            next_poses_.poses.clear();
+            // // 2. Next poses manuale
+            // next_poses_.poses.clear();
 
-            // Primo elemento = centro oggetto
-            geometry_msgs::msg::Pose center_pose;
-            center_pose.position.x = 0.0;  
-            center_pose.position.y = 20.0;
-            center_pose.position.z = 0.0;
-            next_poses_.poses.push_back(center_pose);
-            // punto primo robot 4.0  20.0
-            geometry_msgs::msg::Pose robot1_pose;
-            robot1_pose.position.x = 4.0; 
-            robot1_pose.position.y = 20.0;
-            robot1_pose.position.z = 0.0;
-            next_poses_.poses.push_back(robot1_pose);
-            // punto secondo robot -4.0  20.0
-            geometry_msgs::msg::Pose robot2_pose;
-            robot2_pose.position.x = -4.0;  
-            robot2_pose.position.y = 20.0;
-            robot2_pose.position.z = 0.0;
-            next_poses_.poses.push_back(robot2_pose);
+            // // Primo elemento = centro oggetto
+            // geometry_msgs::msg::Pose center_pose;
+            // center_pose.position.x = 0.0;  
+            // center_pose.position.y = 20.0;
+            // center_pose.position.z = 0.0;
+            // next_poses_.poses.push_back(center_pose);
+            // // punto primo robot 4.0  20.0
+            // geometry_msgs::msg::Pose robot1_pose;
+            // robot1_pose.position.x = 4.0; 
+            // robot1_pose.position.y = 20.0;
+            // robot1_pose.position.z = 0.0;
+            // next_poses_.poses.push_back(robot1_pose);
+            // // punto secondo robot -4.0  20.0
+            // geometry_msgs::msg::Pose robot2_pose;
+            // robot2_pose.position.x = -4.0;  
+            // robot2_pose.position.y = 20.0;
+            // robot2_pose.position.z = 0.0;
+            // next_poses_.poses.push_back(robot2_pose);
             // ==========================================================
 
             RCLCPP_INFO(this->get_logger(), "=== Step 4: update target poses, center point, mean obs and iteration ===");
             RCLCPP_INFO(this->get_logger(), "  Mean observation: %.4f", observation_mean);
             RCLCPP_INFO(this->get_logger(), "  NEW Next poses FIND: %zu", next_poses_.poses.size());
-
             target_goals.clear();
-            for (size_t i = 0; i < robot_names_.size(); i++) {
+
+            for (size_t i = 0; i < robot_activated.size(); i++) {
                 target_goals.push_back(next_poses_.poses[i + 1].position);
             }
-
             RCLCPP_INFO(this->get_logger(), "Updated observation mean: %.4f", observation_mean);
             center_obj.x = next_poses_.poses[0].position.x;
             center_obj.y = next_poses_.poses[0].position.y;
             center_obj.z = 0.0;
-            RCLCPP_INFO(this->get_logger(), "Updated center object to: [%.2f, %.2f, %.2f]",center_obj.x, center_obj.y, center_obj.z);
-            
-            if (iteration == 0) {
-                target_goals = sort_goals_by_distance(target_poses, target_goals);
-            } else {
-                std::vector<geometry_msgs::msg::Pose> current_poses;
-                for (const auto& goal : target_goals) {
-                    geometry_msgs::msg::Pose pose;
-                    pose.position = goal;
-                    // // Orientamento verso il centro
-                    // double yaw = std::atan2(center_obj.y - goal.y, center_obj.x - goal.x);
-                    // pose.orientation.z = std::sin(yaw / 2.0);
-                    // pose.orientation.w = std::cos(yaw / 2.0);
-                    current_poses.push_back(pose);
-                }
-                target_goals = sort_goals_by_distance(current_poses, target_goals);
-            }
 
+            RCLCPP_INFO(this->get_logger(), "Updated center object to: [%.2f, %.2f, %.2f]",center_obj.x, center_obj.y, center_obj.z);
+            current_poses = sort_goals_by_distance(current_poses, target_goals);
+            
             iteration++;
             RCLCPP_INFO(this->get_logger(), "Updated iteration: %d", iteration);
         }
@@ -727,7 +725,8 @@ private:
     YAML::Node objects_yaml_;
     YAML::Node shelfino_yaml_;
     std::vector<std::string> robot_names_;
-    std::vector<geometry_msgs::msg::Pose> target_poses;
+    std::vector<std::string> robot_activated;
+    std::vector<geometry_msgs::msg::Pose> current_poses;
     std::vector<geometry_msgs::msg::Point> target_goals;
     geometry_msgs::msg::Point center_obj;
 };

@@ -847,10 +847,6 @@ class PointCloudProcessor:
         return [robot_body, frame, arrow]
     
     def visualize_cluster_boxxes_with_new_centroids(self, new_centroids, center_2d, radius_circle):
-        """
-        Visualize clusters with both original centroids and new centroids positioned on circle.
-        Shows the circle, connecting lines, and robot frames.
-        """
         if len(self.clusters_boxxes) == 0:
             print("No clusters available. Run create_clusters_boxxes() first.")
             return
