@@ -500,7 +500,7 @@ private:
         observation_mean = 0.0;
         // thresholds for state machine
         float observation_threshold = 5.0;
-        int itereation_thresh = 10;
+        int itereation_thresh = 2;
         
         if (!state_machine_ready_) {
             RCLCPP_WARN(this->get_logger(), "State machine not ready, wait state_machine_ready_ = true");
@@ -627,44 +627,44 @@ private:
                 return;
             }
 
-            // 3. Trigger coordination for next poses
-            RCLCPP_INFO(this->get_logger(), "=== Step 3: Triggering Coordination ===");
-            publish_status("Coordinating step");
+            // // 3. Trigger coordination for next poses
+            // RCLCPP_INFO(this->get_logger(), "=== Step 3: Triggering Coordination ===");
+            // publish_status("Coordinating step");
 
-            reset_coordination_tick();
-            coordination_client_->trigger_coordination_next_pose(timer_action);
-            if (!wait_for_coordination_results(timer_action)) {
-                RCLCPP_ERROR(this->get_logger(), "TIMEOUT: Did not receive coordination results in %f seconds!", timer_action);
-                state_machine_ready_ = false;
-                return;
-            }
+            // reset_coordination_tick();
+            // coordination_client_->trigger_coordination_next_pose(timer_action);
+            // if (!wait_for_coordination_results(timer_action)) {
+            //     RCLCPP_ERROR(this->get_logger(), "TIMEOUT: Did not receive coordination results in %f seconds!", timer_action);
+            //     state_machine_ready_ = false;
+            //     return;
+            // }
             
-            RCLCPP_INFO(this->get_logger(), "Coordination completed successfully");
+            // RCLCPP_INFO(this->get_logger(), "Coordination completed successfully");
             // ==========================================================
-            // SOLO PER TEST VALORI MANUALI, DISATTIVI TUTTO TRANNE STEP 1 e 5
-            // observation_mean = 0.1;
+            // SOLO PER TEST VALORI MANUALI,
+            observation_mean = 0.1;
 
-            // // 2. Next poses manuale
-            // next_poses_.poses.clear();
+            // 2. Next poses manuale
+            next_poses_.poses.clear();
 
-            // // Primo elemento = centro oggetto
-            // geometry_msgs::msg::Pose center_pose;
-            // center_pose.position.x = 0.0;  
-            // center_pose.position.y = 20.0;
-            // center_pose.position.z = 0.0;
-            // next_poses_.poses.push_back(center_pose);
-            // // punto primo robot 4.0  20.0
-            // geometry_msgs::msg::Pose robot1_pose;
-            // robot1_pose.position.x = 4.0; 
-            // robot1_pose.position.y = 20.0;
-            // robot1_pose.position.z = 0.0;
-            // next_poses_.poses.push_back(robot1_pose);
-            // // punto secondo robot -4.0  20.0
-            // geometry_msgs::msg::Pose robot2_pose;
-            // robot2_pose.position.x = -4.0;  
-            // robot2_pose.position.y = 20.0;
-            // robot2_pose.position.z = 0.0;
-            // next_poses_.poses.push_back(robot2_pose);
+            // Primo elemento = centro oggetto
+            geometry_msgs::msg::Pose center_pose;
+            center_pose.position.x = 0.0;  
+            center_pose.position.y = 20.0;
+            center_pose.position.z = 0.0;
+            next_poses_.poses.push_back(center_pose);
+            // punto primo robot 4.0  20.0
+            geometry_msgs::msg::Pose robot1_pose;
+            robot1_pose.position.x = 4.0; 
+            robot1_pose.position.y = 20.0;
+            robot1_pose.position.z = 0.0;
+            next_poses_.poses.push_back(robot1_pose);
+            // punto secondo robot -4.0  20.0
+            geometry_msgs::msg::Pose robot2_pose;
+            robot2_pose.position.x = -4.0;  
+            robot2_pose.position.y = 20.0;
+            robot2_pose.position.z = 0.0;
+            next_poses_.poses.push_back(robot2_pose);
             // ==========================================================
 
             RCLCPP_INFO(this->get_logger(), "=== Step 4: update target poses, center point, mean obs and iteration ===");
