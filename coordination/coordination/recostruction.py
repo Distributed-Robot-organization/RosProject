@@ -630,17 +630,17 @@ class PointCloudProcessor:
         self.logger.info(f"Detected object type from PLY: {object_type_ply}")
         
         new_centroids, center_2d, radius_circle = self.centorids_on_circle(objs_names_yaml, object_type_ply)
-        
+        # compute average observation
+        mean_observation = self.avg_obs_all_cells()
         if not new_centroids:
             print("No new centroids calculated, skipping visualization on circle. FINISH!!!!")
             self.save_point_cloud()
             self.save_boxxes_json()
             self.eliminate_ply_files()
-            return None, None, None
+            return [], center_2d, mean_observation 
         
         self.visualize_cluster_boxxes_with_new_centroids(new_centroids, center_2d, radius_circle)
-        # compute average observation
-        mean_observation = self.avg_obs_all_cells()
+        
         # save point and boxes
         self.save_point_cloud()
         self.save_boxxes_json()

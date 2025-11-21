@@ -500,7 +500,7 @@ private:
         observation_mean = 0.0;
         // thresholds for state machine
         float observation_threshold = 5.0;
-        int itereation_thresh = 2;
+        int itereation_thresh = 10;
         
         if (!state_machine_ready_) {
             RCLCPP_WARN(this->get_logger(), "State machine not ready, wait state_machine_ready_ = true");
@@ -667,6 +667,15 @@ private:
             // next_poses_.poses.push_back(robot2_pose);
             // ==========================================================
 
+            if (next_poses_.poses.size() <= 1) {
+                            RCLCPP_WARN(this->get_logger(), 
+                                        "Coordination did not return any new viewpoints (found %zu poses). Exiting loop.", 
+                                        next_poses_.poses.size());
+                            state_machine_ready_ = false;
+                            publish_status("No new viewpoints found. Exiting state machine. FINISH");
+                            break; 
+                        }
+
             RCLCPP_INFO(this->get_logger(), "=== Step 4: update target poses, center point, mean obs and iteration ===");
             RCLCPP_INFO(this->get_logger(), "  Mean observation: %.4f", observation_mean);
             RCLCPP_INFO(this->get_logger(), "  NEW Next poses FIND: %zu", next_poses_.poses.size());
@@ -685,6 +694,7 @@ private:
             
             iteration++;
             RCLCPP_INFO(this->get_logger(), "Updated iteration: %d", iteration);
+            
         }
         
         state_machine_ready_ = false;
