@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import json
 import yaml
+from datetime import datetime
 
 class PointCloudProcessor:
        
@@ -445,6 +446,15 @@ class PointCloudProcessor:
         
         o3d.io.write_point_cloud(self.ply_save_directory / "complete_cloud.ply", pcd)
         print(f"Point cloud saved to {self.ply_save_directory / 'complete_cloud.ply'}")
+        
+        history_dir = self.ply_save_directory / "history_all_mesh"
+        history_dir.mkdir(parents=True, exist_ok=True)
+        
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        history_path = history_dir / f"complete_cloud_{timestamp}.ply"
+        
+        o3d.io.write_point_cloud(str(history_path), pcd)
+        print(f"Point cloud also saved to {history_path}")
 
     def join_old_and_actual_values_boxxes(self):
         json_filepath = self.ply_save_directory / "boxxes_object.json"
@@ -555,7 +565,7 @@ class PointCloudProcessor:
         center_2d[2] = 0.0
         if len(self.clusters_boxxes) == 0:
             print("No clusters available to distribute on circle")
-            return
+            return new_centroids, center_2d, radius_circle
         
         # Calculate angle step for evenly distributed clusters
         num_clusters = len(self.clusters_boxxes)
@@ -594,6 +604,7 @@ class PointCloudProcessor:
             print(f"    Angle: {np.degrees(angle):.1f}°, Distance moved: {distance_moved:.3f}")
         
         print("Cluster centroids projected onto circle at their radial positions")
+        
         return new_centroids, center_2d, radius_circle
     
     def full_pipeline(self, robot_poses=None):
@@ -619,6 +630,14 @@ class PointCloudProcessor:
         self.logger.info(f"Detected object type from PLY: {object_type_ply}")
         
         new_centroids, center_2d, radius_circle = self.centorids_on_circle(objs_names_yaml, object_type_ply)
+        
+        if not new_centroids:
+            print("No new centroids calculated, skipping visualization on circle. FINISH!!!!")
+            self.save_point_cloud()
+            self.save_boxxes_json()
+            self.eliminate_ply_files()
+            return None, None, None
+        
         self.visualize_cluster_boxxes_with_new_centroids(new_centroids, center_2d, radius_circle)
         # compute average observation
         mean_observation = self.avg_obs_all_cells()
