@@ -211,11 +211,12 @@ class PointCloudProcessor:
             pcd_proc = self.clean_and_smooth_point_cloud(pcd)
             pcd_proc = self.remove_floor_points(pcd_proc)
             print(f"Processed points: {len(pcd_proc.points)}")
-            processed.append(pcd_proc)
+            #processed.append(pcd_proc)
+            processed.append(pcd)
         return processed
     
     def guassian_distribution_point_clouds(self, processed, variance=1.5):
-        
+        z_scale_factor = 1.5
         for pcd in processed:
             points = np.asarray(pcd.points)
             centered = points - np.mean(points, axis=0)
@@ -228,7 +229,7 @@ class PointCloudProcessor:
             order = np.argsort(eigvals)[::-1]
             eigvals = eigvals[order]
             eigvecs = eigvecs[:, order]
-
+            eigvals[2] *= z_scale_factor
             points_pca = centered @ eigvecs
             dist_elliptic = np.sqrt(
                 (points_pca[:,0]/np.sqrt(eigvals[0]))**2 +
@@ -313,11 +314,8 @@ class PointCloudProcessor:
         print(f"Created {len(self.boxxes)} cells ({non_empty_cells} non-empty) with grid divisions {grid_divisions}")
         return self.boxxes
     
-    def create_clusters_boxxes(self, observation_threshold=0.2, eps=0.1, min_samples=3, min_cluster_size=15):
-        """
-        Create clusters of boxes with low observation values.
-        Groups nearby boxes with avg_observation below threshold into regions.
-        """
+    def create_clusters_boxxes(self, observation_threshold=0.2, eps=0.2, min_samples=3, min_cluster_size=15):
+    
         if len(self.boxxes) == 0:
             print("No boxes available. Run create_boxxes() first.")
             return
@@ -749,9 +747,6 @@ class PointCloudProcessor:
         o3d.visualization.draw_geometries(geometries)
     
     def visualize_cluster_boxxes(self):
-        """
-        Visualize clusters with their centroids and the main bounding box.
-        """
         if len(self.clusters_boxxes) == 0:
             print("No clusters available. Run create_clusters_boxxes() first.")
             return
@@ -966,7 +961,8 @@ def main():
     ply_directory = "/ros2_ws/src/working_directory/point_cloud/filtered_ply"
     # where to save processed .ply files --> in mesh folder save also the .ply and the mesh files
     ply_save_directory = "/ros2_ws/src/working_directory/mesh"
-    processor = PointCloudProcessor(ply_directory=ply_directory, ply_save_directory=ply_save_directory)
+    yaml_file = "/ros2_ws/src/main_logic/config/object_params.yaml"
+    processor = PointCloudProcessor(ply_directory=ply_directory, ply_save_directory=ply_save_directory, yaml_file=yaml_file)
 
     processor.full_pipeline()
     # processor.visualize_point_cloud()

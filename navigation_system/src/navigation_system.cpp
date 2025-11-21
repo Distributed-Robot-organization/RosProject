@@ -254,7 +254,7 @@ private:
     
     double current_yaw = get_yaw_from_quaternion(current_pose_.orientation);
     double angle_error = normalize_angle(target_yaw_ - current_yaw);
-    const double angle_threshold = 0.2;
+    const double angle_threshold = 0.1;
     
     if (std::abs(angle_error) < angle_threshold) {
       RCLCPP_INFO(this->get_logger(), "Rotation completed. Final error: %.3f rad", angle_error);
