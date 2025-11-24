@@ -51,11 +51,11 @@
     # init_yaw: [0.0] # Yaw of the robots
 
     map: "big_map" # Maps can be "test_world" or "plane_2"
-    init_names: ["shelfino1","pollo"] # Names of the robots to be spawned
-    init_rand: [false, false] # If true, the robots will be spawned in random positions
-    init_x: [8.,8.] # X position of the robots
-    init_y: [14.,16.] # Y position of the robots
-    init_yaw: [1.5708,-1.5708] # Yaw of the robots
+    init_names: ["shelfino1"] # Names of the robots to be spawned
+    init_rand: [false] # If true, the robots will be spawned in random positions
+    init_x: [8.] # X position of the robots
+    init_y: [14.] # Y position of the robots
+    init_yaw: [1.5708] # Yaw of the robots
 
     server:
       voxel_size: 0.05 #meters

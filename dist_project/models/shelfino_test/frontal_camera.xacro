@@ -39,7 +39,7 @@
   <joint name='${robot_name}/frontal_camera_joint' type='fixed'>
     <parent link='${robot_name}/chassis_link' />
     <child link='${robot_name}/frontal_camera_link' />
-    <origin xyz='${body_length/2+0.10} 0 ${body_height/2}' rpy='0 0 0' />
+    <origin xyz='${body_length/2+0.10} 0 ${body_height/2+0.7}' rpy='0 0.087 0' />
   </joint>
 
   <!-- From Ros Joint system to video coordinate system -->

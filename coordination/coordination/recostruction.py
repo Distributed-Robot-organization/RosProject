@@ -431,6 +431,18 @@ class PointCloudProcessor:
             print(f"data saved to: {filepath}")
         except Exception as e:
             print(f"Error saving JSON file: {e}")
+        
+        # Save to history folder
+        history_dir = self.ply_save_directory / "history_all_json"
+        history_dir.mkdir(parents=True, exist_ok=True)
+        
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        history_filename = filename.replace(".json", f"_{timestamp}.json")
+        history_path = history_dir / history_filename
+        with open(history_path, 'w') as f:
+            json.dump(data_boxxes, f, indent=4)
+        print(f"JSON also saved to history: {history_path}")
+        
 
     def save_point_cloud(self):
         if len(self.point_t) == 0:

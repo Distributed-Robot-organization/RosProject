@@ -36,4 +36,4 @@ def generate_launch_description():
     
 # colcon build --symlink-install --parallel-workers 1 && source install/setup.bash 
 # ros2 launch main_logic bring_up.launch.py 
-# ros2 topic pub /main_logic/obj_to_detect std_msgs/msg/String "data: 'small_cone'" --onces
+# ros2 topic pub /main_logic/obj_to_detect std_msgs/msg/String "data: 'small_cone'" --once
