@@ -1,4 +1,8 @@
-small_cone:
-  radius: 4.0  # meters
+cone:
+  radius: 4.0  
 hydrant: 
-  radius: 1.0  # meters
+  radius: 4.0  
+dumpster:
+  radius: 8.0
+fountain:
+  radius: 8.0

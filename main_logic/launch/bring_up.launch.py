@@ -33,7 +33,11 @@ def generate_launch_description():
         include('main_logic', 'main_logic.launch.py', delay=15.0),
         
     ])
-    
+
+#   ros2 run teleop_twist_keyboard teleop_twist_keyboard cmd_vel:=/shelfino1/cmd_vel    
 # colcon build --symlink-install --parallel-workers 1 && source install/setup.bash 
 # ros2 launch main_logic bring_up.launch.py 
-# ros2 topic pub /main_logic/obj_to_detect std_msgs/msg/String "data: 'small_cone'" --once
+# ros2 topic pub /main_logic/obj_to_detect std_msgs/msg/String "data: 'cone'" --once
+# ros2 topic pub /main_logic/obj_to_detect std_msgs/msg/String "data: 'hydrant'" --once
+# ros2 topic pub /main_logic/obj_to_detect std_msgs/msg/String "data: 'dumpster'" --once
+# ros2 topic pub /main_logic/obj_to_detect std_msgs/msg/String "data: 'fountain'" --once

@@ -18,6 +18,13 @@ class PointCloudProcessor:
         self.yaml_file = yaml_file
         self.logger = logger if logger is not None else __import__('logging').getLogger(__name__)
         
+        # Create directories if they don't exist
+        self.ply_directory.mkdir(parents=True, exist_ok=True)
+        self.ply_save_directory.mkdir(parents=True, exist_ok=True)
+        
+        print(f"PLY directory: {self.ply_directory} (created if didn't exist)")
+        print(f"PLY save directory: {self.ply_save_directory} (created if didn't exist)")
+        
         if not os.path.exists(ply_directory):
             raise FileNotFoundError(f"Directory does not exist: {ply_directory}")
         if not os.path.exists(ply_save_directory):
@@ -49,6 +56,8 @@ class PointCloudProcessor:
         
     def load_ply_files(self):
         cloud_list = []
+        # Ensure directory exists
+        self.ply_directory.mkdir(parents=True, exist_ok=True)
         ply_files = sorted(Path(self.ply_directory).glob("*.ply"))
         for ply in ply_files:
             pcd = o3d.io.read_point_cloud(str(ply))
@@ -521,7 +530,16 @@ class PointCloudProcessor:
             print(f"Error loading or merging data: {e}")
     
     def eliminate_ply_files(self):
+        # Ensure directory exists before trying to delete files
+        if not self.ply_directory.exists():
+            print(f"Directory {self.ply_directory} does not exist, nothing to delete")
+            return
+            
         ply_files = sorted(Path(self.ply_directory).glob("*.ply"))
+        if not ply_files:
+            print(f"No PLY files found in {self.ply_directory}")
+            return
+            
         for ply in ply_files:
             try:
                 os.remove(ply)
@@ -549,6 +567,8 @@ class PointCloudProcessor:
     
     
     def detect_object_type_from_ply(self):
+        # Ensure directory exists
+        self.ply_directory.mkdir(parents=True, exist_ok=True)
         ply_files = sorted(self.ply_directory.glob("*.ply"))
         
         if not ply_files:

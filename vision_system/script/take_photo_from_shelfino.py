@@ -27,19 +27,16 @@ class ImageCapture(Node):
         self.get_logger().info("Node started. Publish 'true' to /capture_trigger to start image capture.")
 
     def image_callback(self, msg):
-        """Callback to store the latest image from the topic."""
         try:
             self.current_image = self.bridge.imgmsg_to_cv2(msg, "bgr8")
         except Exception as e:
             self.get_logger().error(f"Image conversion error: {e}")
 
     def trigger_callback(self, msg: Bool):
-        """Callback to start image acquisition when trigger is received."""
         if msg.data:
             threading.Thread(target=self.capture_sequence, daemon=True).start()
 
     def capture_sequence(self):
-        """Captures a sequence of 10 images."""
         if self.capturing:
             self.get_logger().warn("Capture already in progress.")
             return

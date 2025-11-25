@@ -10,7 +10,7 @@ Chapters:
 - [Course Project: Distributed Robot Perception - AY 2024/2025](#course-project-distributed-robot-perception---ay-20242025)
 - [Project Overview:](#project-overview)
 - [Index:](#index)
-- [Tenchologies Used:](#tenchologies-used)
+- [Technologies Used:](#technologies-used)
 - [Simulation Scene:](#simulation-scene)
 - [Components:](#components)
   - [Navigation System](#navigation-system)
@@ -26,7 +26,7 @@ Chapters:
 - [Project Structure](#project-structure)
 - [Contributors](#contributors)
 
-# Tenchologies Used:
+# Technologies Used:
 
 - **Robot**: Shelfino
 - **Programming language**: C++ (core ROS2 Nodes and navigation) Python (image stream processing, and mesh point cloud)
@@ -44,6 +44,11 @@ Chapters:
 - **Control Algorithms**: Standard ROS2 navigation stack (NAV2) with SLAM and path planning capabilities.
 - **3D Reconstruction Techniques**: Point cloud generation and merging using depth data from RGB-D cameras, object recognition using YOLO.
 - **Communication Protocols**: ROS2 topics and services for inter-robot communication and data sharing. using ROS2 DDS-based communication.
+- Object recostruction:
+  - Cone
+  - Hydrant
+  - Dumpster
+  - Fountain
 
 # Simulation Scene:
 The simulation environment is set up in Gazebo, featuring a warehouse-like setting with multiple objects to be scanned by the robots. Each Shelfino robot is equipped with an RGB-D camera for depth sensing and object recognition.
@@ -137,6 +142,7 @@ Now to start the main logic system, open a new terminal and run:
 ```bash
 ros2 topic pub /main_logic/obj_to_detect std_msgs/msg/String "data: 'small_cone'" --once
 ```
+
 >Note: You can change 'small_cone' with the object you want to scan. (see the **src/main_logic/config/object_params.yaml** to see all the available objects)
 
 # Project Structure
