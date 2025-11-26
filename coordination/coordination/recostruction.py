@@ -1,4 +1,4 @@
-from venv import logger
+import logging
 import open3d as o3d
 import numpy as np
 import copy
@@ -16,7 +16,7 @@ class PointCloudProcessor:
         self.ply_directory = Path(ply_directory)
         self.ply_save_directory = Path(ply_save_directory)
         self.yaml_file = yaml_file
-        self.logger = logger if logger is not None else __import__('logging').getLogger(__name__)
+        self.logger = logger if logger is not None else logging.getLogger(__name__)
         
         # Create directories if they don't exist
         self.ply_directory.mkdir(parents=True, exist_ok=True)
@@ -225,8 +225,8 @@ class PointCloudProcessor:
             processed.append(pcd)
         return processed
     
-    def guassian_distribution_point_clouds(self, processed, variance=1.5):
-        z_scale_factor = 1.5
+    def guassian_distribution_point_clouds(self, processed, variance=1.0):
+        
         for pcd in processed:
             points = np.asarray(pcd.points)
             centered = points - np.mean(points, axis=0)
@@ -239,12 +239,11 @@ class PointCloudProcessor:
             order = np.argsort(eigvals)[::-1]
             eigvals = eigvals[order]
             eigvecs = eigvecs[:, order]
-            eigvals[2] *= z_scale_factor
             points_pca = centered @ eigvecs
             dist_elliptic = np.sqrt(
-                (points_pca[:,0]/np.sqrt(eigvals[0]))**2 +
-                (points_pca[:,1]/np.sqrt(eigvals[1]))**2 +
-                (points_pca[:,2]/np.sqrt(eigvals[2]))**2
+                # # (points_pca[:,0]/np.sqrt(eigvals[0]))**2 +
+                (points_pca[:,1]/np.sqrt(eigvals[1]))**2 
+                # (points_pca[:,2]/np.sqrt(eigvals[2]))**2
             )
 
             observations = np.exp(-(dist_elliptic**2) / (2 * variance**2))
@@ -324,7 +323,7 @@ class PointCloudProcessor:
         print(f"Created {len(self.boxxes)} cells ({non_empty_cells} non-empty) with grid divisions {grid_divisions}")
         return self.boxxes
     
-    def create_clusters_boxxes(self, observation_threshold=0.2, eps=0.2, min_samples=3, min_cluster_size=15):
+    def create_clusters_boxxes(self, observation_threshold=0.2, eps=0.1, min_samples=3, min_cluster_size=15):
     
         if len(self.boxxes) == 0:
             print("No boxes available. Run create_boxxes() first.")
@@ -477,7 +476,7 @@ class PointCloudProcessor:
         o3d.io.write_point_cloud(str(history_path), pcd)
         print(f"Point cloud also saved to {history_path}")
 
-    def join_old_and_actual_values_boxxes(self):
+    def join_old_and_actual_values_boxxes(self, add_obs_value= 0.1):
         json_filepath = self.ply_save_directory / "boxxes_object.json"
         
         # Check if previous data exists
@@ -490,17 +489,39 @@ class PointCloudProcessor:
                 old_data = json.load(f)
             
             print(f"Loaded {len(old_data)} previous boxes from JSON")
-            
-            # Extract all old point_t data
+            current_points_np = None
+            if len(self.point_t) > 0:
+                current_points_np = np.array([p[0] for p in self.point_t])
+
             old_point_t = []
+            
             for cell_data in old_data:
+                
+                box_min = np.array(cell_data['pose_box']['min_bound'])
+                box_max = np.array(cell_data['pose_box']['max_bound'])
+                
+                cell_centroid = np.array(cell_data['centroid'])
+                
+                
+                is_visited_again = False
+                
+                if current_points_np is not None and len(current_points_np) > 0:
+                    mask = np.all((current_points_np >= box_min) & (current_points_np <= box_max), axis=1)
+                    if np.any(mask):
+                        is_visited_again = True
+                
+                
+                
                 if cell_data['point_t_cell'] is not None:
                     # Convert back from JSON format to internal format
                     for p in cell_data['point_t_cell']:
                         point = np.array(p[0], dtype=float)
                         obs = float(p[1])                  
                         col = p[2]
-                        old_point_t.append([point, obs, col])
+                        if is_visited_again:
+                            obs += add_obs_value
+                            obs = min(obs, 1.0)
+                        old_point_t.append([point, obs, col, cell_centroid])
             
             print(f"Extracted {len(old_point_t)} old points")
             print(f"Current points: {len(self.point_t)}")
@@ -678,8 +699,7 @@ class PointCloudProcessor:
         self.save_boxxes_json()
         self.eliminate_ply_files()
         return new_centroids, self.big_box['center'], mean_observation      
-        
-      
+          
     def visualize_point_t(self):
         if len(self.point_t) == 0:
             print("No point_t data available. Run guassian_distribution_point_clouds() first.")

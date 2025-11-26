@@ -78,7 +78,7 @@ class ObjectDetectionNode(Node):
 
         # YOLO model
         package_share_directory = get_package_share_directory('vision_system')
-        model_path = os.path.join(package_share_directory, 'models', 'best.pt')
+        model_path = os.path.join(package_share_directory, 'models', 'best_4_obj.pt')
         self.model = YOLO(model_path)
         if self.cuda_available:
             self.model.to(self.device)
@@ -572,13 +572,13 @@ class ObjectDetectionNode(Node):
             o3d_pcd.points = o3d.utility.Vector3dVector(points)
             self.get_logger().info(f"Initial point cloud: {len(o3d_pcd.points)} points")
             
-            # Step 1: Remove plane background
-            o3d_pcd = self.remove_plane_background(o3d_pcd, distance_threshold=0.03)
-            self.get_logger().info(f"After plane removal: {len(o3d_pcd.points)} points")
+            # Step 1: Remove plane background with RANSAC
+            # o3d_pcd = self.remove_plane_background(o3d_pcd, distance_threshold=0.03)
+            # self.get_logger().info(f"After plane removal: {len(o3d_pcd.points)} points")
             
-            if len(o3d_pcd.points) == 0:
-                self.get_logger().warn(f"No points remaining after plane removal for {obj['label']}")
-                continue
+            # if len(o3d_pcd.points) == 0:
+            #     self.get_logger().warn(f"No points remaining after plane removal for {obj['label']}")
+            #     continue
             
             # Step 1b: Remove floor plane
             o3d_pcd = self.remove_floor_plane(o3d_pcd, floor_z_threshold=0.001, min_height=0.001)
@@ -663,7 +663,6 @@ class ObjectDetectionNode(Node):
                     )
 
         return pcd_foreground
-    
     
     def remove_floor_plane(self, o3d_pcd, floor_z_threshold=0.001, min_height=0.001):
         if len(o3d_pcd.points) == 0:

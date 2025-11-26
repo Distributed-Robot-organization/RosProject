@@ -1,0 +1,88 @@
+<?xml version='1.0' ?>
+<robot name='shelfino' xmlns:xacro='http://www.ros.org/wiki/xacro'>
+  <!--
+  CAMERA
+  -->
+  <xacro:property name='f_camera_width' value='0.1' />
+  <xacro:property name='f_camera_height' value='0.025' />
+  <xacro:property name='f_camera_depth' value='0.025' />
+  <xacro:property name='f_camera_mass' value='0.1' />
+
+  <link name='${robot_name}/frontal_camera_link'>
+    <visual>
+      <origin xyz='0 ${f_camera_depth/2} 0' rpy='0 0 0' />
+      <geometry>
+        <box size='${f_camera_depth} ${f_camera_width} ${f_camera_height}' />
+      </geometry>
+      <material name='Red' />
+    </visual>
+    <inertial>
+      <mass value='0.1' />
+      <inertia
+                ixx='0.001'
+                ixy='0.0'
+                ixz='0.0'
+                iyy='0.001'
+                iyz='0.0'
+                izz='0.001'
+            />
+    </inertial>
+  </link>
+
+  <link name='${robot_name}/frontal_camera_link_optical'>
+  </link>
+
+  <!--
+                  JOINT
+  -->
+
+  <joint name='${robot_name}/frontal_camera_joint' type='fixed'>
+    <parent link='${robot_name}/chassis_link' />
+    <child link='${robot_name}/frontal_camera_link' />
+    <origin xyz='${body_length/2+0.10} 0 ${body_height/2+1.5}' rpy='0 0.087 0' />
+  </joint>
+
+  <!-- From Ros Joint system to video coordinate system -->
+
+  <joint name='${robot_name}/frontal_camera_optical_joint' type='fixed'>
+    <parent link='${robot_name}/frontal_camera_link' />
+    <child link='${robot_name}/frontal_camera_link_optical' />
+    <origin xyz='0 0 0' rpy='${-pi/2} 0 ${-pi/2}' />
+  </joint>
+
+  <gazebo reference='${robot_name}/frontal_camera_link'>
+    <material>Gazebo/Red</material>
+    <sensor name="f_camera" type="depth">
+      <pose> 0 0 0 0 0 0 </pose>
+      <visualize>true</visualize>
+      <update_rate>10</update_rate>
+      <camera>
+        <horizontal_fov>1.089</horizontal_fov>
+        <image>
+            <format>B8G8R8</format>
+            <width>640</width>
+            <heigth>480</heigth>
+        </image>
+        <clip>
+            <near>0.05</near>
+            <far>${max_camera_depth}</far>
+        </clip>
+        <noise>
+            <type>gaussian</type>
+            <mean>0.0</mean>
+            <stddev>0.1</stddev>  <!-- Adjust for stronger/weaker noise -->
+        </noise>
+      </camera>
+
+      <plugin name="f_camera_controller" filename="libgazebo_ros_camera.so">
+
+        <frame_name>${robot_name}/frontal_camera_link_optical</frame_name>
+        <min_depth>0.1</min_depth>
+        <max_depth>100.0</max_depth>
+
+      </plugin>
+    </sensor>
+  </gazebo>
+
+
+</robot>
