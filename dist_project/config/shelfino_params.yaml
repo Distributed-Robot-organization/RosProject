@@ -51,12 +51,11 @@
     # init_yaw: [0.0] # Yaw of the robots
 
     map: "big_map" # Maps can be "test_world" or "plane_2"
-    init_names: ["shelfino1","pollo", "mario", "pluto"] # Names of the robots to be spawned
-    init_rand: [false, false, false, false] # If true, the robots will be spawned in random positions
-    init_x: [0.,0.,4.,-4.] # X position of the robots
-    init_y: [16.,24.0, 20., 20.] # Y position of the robots
-    init_yaw: [1.5708,-1.5708,3.14,0.0] # Yaw of the robots
-
+    init_names: ["shelfino1","pollo"] # Names of the robots to be spawned
+    init_rand: [false, false] # If true, the robots will be spawned in random positions
+    init_x: [8.,8.] # X position of the robots
+    init_y: [14.,18.] # Y position of the robots
+    init_yaw: [1.5708,-1.5708] # Yaw of the robots
     server:
       voxel_size: 0.05 #meters
       hz: 1 #update rate of the cluster
@@ -76,8 +75,11 @@
           reliability: reliable
 
     checkpoints:
-      pollo: [-5.4,18.0,-1.53, 10.0,21.0,1.69]
-      shelfino1: [3.8,-11.7,-1.7, -12.1,-16.86,1.69, -24.0,0.5,1.68, 1.0,1.34,-1.57]
+      center: [0.0, 20.0, 0.0]
+      pollo: [0.,24.0,-1.5708]
+      shelfino1: [0.,16.0,-1.5708]
+      # shelfino1: [0.,12.0,-1.5708]
+      # pollo: [0.,28.0,-1.5708]
 
     topics:
       filtered_pcl: "filtered_pcl"

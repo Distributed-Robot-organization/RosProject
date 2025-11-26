@@ -141,6 +141,8 @@ private:
     goal_pose.position.x = goal_x;
     goal_pose.position.y = goal_y;
     goal_pose.position.z = 0.0;
+
+    final_goal = goal_pose.position;
     
     tf2::Quaternion q;
     q.setRPY(0.0, 0.0, angle);
@@ -157,7 +159,7 @@ private:
   {
     RCLCPP_INFO(this->get_logger(), "Received specific goal: (%.2f, %.2f)", 
                 request->pose.position.x, request->pose.position.y);
-
+    final_goal = request->pose.position;
     compute_path_to_goal(request->pose);
     
     response->success = true;
@@ -252,7 +254,7 @@ private:
     
     double current_yaw = get_yaw_from_quaternion(current_pose_.orientation);
     double angle_error = normalize_angle(target_yaw_ - current_yaw);
-    const double angle_threshold = 0.2;
+    const double angle_threshold = 0.1;
     
     if (std::abs(angle_error) < angle_threshold) {
       RCLCPP_INFO(this->get_logger(), "Rotation completed. Final error: %.3f rad", angle_error);
@@ -420,18 +422,26 @@ private:
     double dy = final_goal.y - current_pose_.position.y;
     double distance = std::sqrt(dx * dx + dy * dy);
 
-    if (distance <= 0.1) {
+    if (distance <= 0.15) { 
       RCLCPP_INFO(this->get_logger(), "Robot reached goal! Distance: %.3f m", distance);
       
-      // Publish goal reached status
-      std_msgs::msg::Bool msg;
-      msg.data = true;
-      tick_service_navigation_pub->publish(msg);
-      RCLCPP_INFO(this->get_logger(), "Current robot pose: (%.2f, %.2f)", current_pose_.position.x, current_pose_.position.y);
+      
       if (current_goal_handle_) {
         auto cancel_future = action_client_->async_cancel_goal(current_goal_handle_);
         current_goal_handle_.reset();
       }
+
+      geometry_msgs::msg::Twist stop_cmd;
+      stop_cmd.linear.x = 0.0;
+      stop_cmd.linear.y = 0.0;
+      stop_cmd.angular.z = 0.0;
+      cmd_vel_pub_->publish(stop_cmd); // Pubblica lo stop immediato
+
+      std_msgs::msg::Bool msg;
+      msg.data = true;
+      tick_service_navigation_pub->publish(msg);
+      
+      saved_path_.poses.clear();
     }
   }
 
@@ -449,13 +459,23 @@ private:
 
     auto send_goal_options = rclcpp_action::Client<ComputePathToPose>::SendGoalOptions();
     send_goal_options.result_callback = 
-        [this](const GoalHandleComputePath::WrappedResult &result) {
+        [this, goal_pose](const GoalHandleComputePath::WrappedResult &result) { // Nota: ho aggiunto goal_pose nel capture
           if (result.code == rclcpp_action::ResultCode::SUCCEEDED) {
             RCLCPP_INFO(this->get_logger(), "Path computed successfully!");
             path_pub_->publish(result.result->path);
             send_path_goal(result.result->path);
           } else {
-            RCLCPP_ERROR(this->get_logger(), "Failed to compute path");
+            // DEBUG AVANZATO
+            std::string error_msg;
+            switch(result.code) {
+                case rclcpp_action::ResultCode::ABORTED: error_msg = "ABORTED (Planner blocked)"; break;
+                case rclcpp_action::ResultCode::CANCELED: error_msg = "CANCELED"; break;
+                case rclcpp_action::ResultCode::UNKNOWN: error_msg = "UNKNOWN"; break;
+                default: error_msg = "OTHER"; break;
+            }
+            RCLCPP_ERROR(this->get_logger(), 
+                "Failed to compute path. Result Code: %s. Target was: (%.2f, %.2f)", 
+                error_msg.c_str(), goal_pose.position.x, goal_pose.position.y);
           }
         };
 

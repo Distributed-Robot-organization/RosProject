@@ -1355,10 +1355,20 @@
       <static>1</static>
     </model>
     <state world_name='default'>
-      <sim_time>447 425000000</sim_time>
-      <real_time>104 304673885</real_time>
-      <wall_time>1757948305 780773311</wall_time>
-      <iterations>104107</iterations>
+      <sim_time>601 176000000</sim_time>
+      <real_time>155 109896718</real_time>
+      <wall_time>1763731286 827931913</wall_time>
+      <iterations>153751</iterations>
+      <model name='Construction Cone'>
+        <pose>-0 20 -0 0 -0 0</pose>
+        <scale>1 1 1</scale>
+        <link name='link'>
+          <pose>-0 20 -0 0 -0 0</pose>
+          <velocity>0 0 0 0 -0 0</velocity>
+          <acceleration>0 -0 -0.008512 -2.58585 1.13682 3.14159</acceleration>
+          <wrench>0 -0 -0.008512 0 -0 0</wrench>
+        </link>
+      </model>
       <model name='big_map_model'>
         <pose>-9.41634 4.0467 0 0 -0 0</pose>
         <scale>1 1 1</scale>
@@ -1542,13 +1552,13 @@
         </link>
       </model>
       <model name='unit_cylinder'>
-        <pose>-10.0589 -13.7728 0.499989 7e-06 -7e-06 6e-06</pose>
+        <pose>-10.059 -13.7724 0.499996 3e-06 -3e-06 1.9e-05</pose>
         <scale>2.73503 2.73503 1</scale>
         <link name='link'>
-          <pose>-10.0589 -13.7728 0.499989 7e-06 -7e-06 6e-06</pose>
+          <pose>-10.059 -13.7724 0.499996 3e-06 -3e-06 1.9e-05</pose>
           <velocity>0 0 0 0 -0 0</velocity>
-          <acceleration>-6.58608 -6.63866 -1.96428 1.65033 -1.3517 -0.016513</acceleration>
-          <wrench>-6.58608 -6.63866 -1.96428 0 -0 0</wrench>
+          <acceleration>0 0 -9.8 0 -0 0</acceleration>
+          <wrench>0 0 -9.8 0 -0 0</wrench>
         </link>
       </model>
       <light name='sun'>
@@ -1557,7 +1567,7 @@
     </state>
     <gui fullscreen='0'>
       <camera name='user_camera'>
-        <pose>-9.82682 -34.3742 108.149 0 1.3058 1.35528</pose>
+        <pose>19.6336 -47.1689 37.0456 0 0.689799 1.71928</pose>
         <view_controller>orbit</view_controller>
         <projection_type>perspective</projection_type>
       </camera>
@@ -1616,6 +1626,55 @@
         <enable_wind>0</enable_wind>
         <kinematic>0</kinematic>
       </link>
+    </model>
+    <model name='Construction Cone'>
+      <link name='link'>
+        <collision name='collision'>
+          <geometry>
+            <mesh>
+              <scale>10 10 10</scale>
+              <uri>model://construction_cone/meshes/construction_cone.dae</uri>
+            </mesh>
+          </geometry>
+          <max_contacts>10</max_contacts>
+          <surface>
+            <contact>
+              <ode/>
+            </contact>
+            <bounce/>
+            <friction>
+              <torsional>
+                <ode/>
+              </torsional>
+              <ode/>
+            </friction>
+          </surface>
+        </collision>
+        <visual name='visual'>
+          <geometry>
+            <mesh>
+              <scale>10 10 10</scale>
+              <uri>model://construction_cone/meshes/construction_cone.dae</uri>
+            </mesh>
+          </geometry>
+        </visual>
+        <self_collide>0</self_collide>
+        <inertial>
+          <pose>0 0 0 0 -0 0</pose>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+          <mass>1</mass>
+        </inertial>
+        <enable_wind>0</enable_wind>
+        <kinematic>0</kinematic>
+      </link>
+      <pose>2.55806 -11.5545 0 0 -0 0</pose>
     </model>
   </world>
 </sdf>

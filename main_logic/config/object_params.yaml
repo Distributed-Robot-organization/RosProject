@@ -1,0 +1,8 @@
+cone:
+  radius: 4.0  
+hydrant: 
+  radius: 4.0  
+dumpster:
+  radius: 8.0
+fountain:
+  radius: 8.0

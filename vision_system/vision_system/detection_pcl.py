@@ -7,6 +7,7 @@ from std_srvs.srv import Trigger
 from sensor_msgs.msg import Image, PointCloud2, CameraInfo
 from std_msgs.msg import Header
 import geometry_msgs.msg
+from nav_msgs.msg import Odometry
 import numpy as np
 from cv_bridge import CvBridge
 import cv2
@@ -63,6 +64,7 @@ class ObjectDetectionNode(Node):
         detection_results_topic = self.get_parameter('detection_results_topic').value
         point_cloud_topic = self.get_parameter('point_cloud_topic').value
         camera_info_topic = self.get_parameter('info_camera').value
+        odom_topic = f'/{robot_ns}/odom'
         self.z_ground_offset = self.get_parameter('z_ground_offset').value
         self.use_half_precision = self.get_parameter('use_half_precision').value
         self.yolo_imgsz = self.get_parameter('yolo_imgsz').value
@@ -76,7 +78,7 @@ class ObjectDetectionNode(Node):
 
         # YOLO model
         package_share_directory = get_package_share_directory('vision_system')
-        model_path = os.path.join(package_share_directory, 'models', 'best.pt')
+        model_path = os.path.join(package_share_directory, 'models', 'best_4_obj.pt')
         self.model = YOLO(model_path)
         if self.cuda_available:
             self.model.to(self.device)
@@ -89,6 +91,7 @@ class ObjectDetectionNode(Node):
         qos_sensor = QoSProfile(reliability=ReliabilityPolicy.BEST_EFFORT,
                                durability=DurabilityPolicy.VOLATILE,
                                history=HistoryPolicy.KEEP_LAST, depth=1)
+        
         qos_reliable = QoSProfile(reliability=ReliabilityPolicy.RELIABLE,
                                  durability=DurabilityPolicy.VOLATILE,
                                  history=HistoryPolicy.KEEP_LAST, depth=5)
@@ -98,6 +101,7 @@ class ObjectDetectionNode(Node):
         self.create_subscription(Image, depth_topic, self.depth_callback, qos_sensor)
         self.create_subscription(PointCloud2, point_cloud_topic, self.pointcloud_callback, qos_sensor)
         self.create_subscription(CameraInfo, camera_info_topic, self.camera_info_callback, qos_reliable)
+        self.create_subscription(Odometry, odom_topic, self.odom_callback, qos_sensor)
         
         # Publishers
         self.image_publisher = self.create_publisher(Image, image_detection_topic, qos_reliable)
@@ -113,7 +117,7 @@ class ObjectDetectionNode(Node):
         # State variables
         self.detection_triggered = False
         self.target_object_name = None  
-        self.confidence_threshold = 0.5
+        self.confidence_threshold = 0.7
         self.detected_objects_list = []
         self.detection_timer = None  
         self.detection_duration = 3.0  # tempo dal primo rilevamento
@@ -133,6 +137,9 @@ class ObjectDetectionNode(Node):
         # Camera intrinsics
         self.fx = self.fy = 525.0
         self.cx_optical = self.cy_optical = None
+        
+        # Robot position tracking
+        self.current_robot_position = None
         
         self.get_logger().info(f"Object Detection Node initialized for robot: {robot_ns}")
         self.get_logger().info("READY TO DETECT FILTER AND SAVE!")
@@ -238,6 +245,27 @@ class ObjectDetectionNode(Node):
         return response
     
     # === TOPIC CALLBACKS ===
+    def odom_callback(self, odom_msg: Odometry) -> None:
+        try:
+            position = {
+                'x': odom_msg.pose.pose.position.x,
+                'y': odom_msg.pose.pose.position.y,
+                'z': odom_msg.pose.pose.position.z,
+                'timestamp': odom_msg.header.stamp,
+                'orientation': {
+                    'x': odom_msg.pose.pose.orientation.x,
+                    'y': odom_msg.pose.pose.orientation.y,
+                    'z': odom_msg.pose.pose.orientation.z,
+                    'w': odom_msg.pose.pose.orientation.w
+                }
+            }
+            
+            self.current_robot_position = position
+            
+            
+        except Exception as e:
+            self.get_logger().error(f"Odometry callback error: {e}")
+
     def camera_info_callback(self, info: CameraInfo) -> None:
         if self.cx_optical is None and len(info.k) >= 5:
             self.fx, self.fy = info.k[0], info.k[4]
@@ -501,7 +529,6 @@ class ObjectDetectionNode(Node):
 
         return transformed
 
-
     def save_object_pointcloud(self, directory: str, label: str, points_3d: list, obj_id: int):
         try:
             if not points_3d:
@@ -511,7 +538,7 @@ class ObjectDetectionNode(Node):
                 directory = "/ros2_ws/src/working_directory/point_cloud/raw_ply"
             
             timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = os.path.join(directory, f"object_{label}_{obj_id}_{timestamp}.ply")
+            filename = os.path.join(directory, f"{label}_{obj_id}.ply")
             
             with open(filename, 'w') as f:
                 f.write("ply\nformat ascii 1.0\n")
@@ -537,66 +564,77 @@ class ObjectDetectionNode(Node):
                 self.get_logger().warn(f"Object {obj['label']} (ID {obj['id']}) has no points to filter")
                 continue
             
-            self.get_logger().info(f"Filtering point cloud for {obj['label']} (ID {obj['id']}) with {len(points_3d)} points")
+            self.get_logger().info(f"Starting filtering for {obj['label']} (ID {obj['id']}) with {len(points_3d)} points")
             
-            # Apply filtering and smoothing
-            filtered_points = self.clean_and_smooth_point_cloud(points_3d)
-            
-            if not filtered_points:
-                self.get_logger().warn(f"Filtering resulted in empty point cloud for {obj['label']} (ID {obj['id']})")
-                continue
-            
-            # Update the object with filtered points
-            obj['points_3d'] = filtered_points
-            
-            self.get_logger().info(f"Filtered point cloud: {len(filtered_points)} points remaining")
-            
-            # Save the filtered point cloud
-            self.save_object_pointcloud(self.ply_filtered_dir, f"{obj['label']}_filtered", filtered_points, obj['id'])
-    
-    def clean_and_smooth_point_cloud(self, pcd):
-        # Convert list of dictionaries to Open3D PointCloud if needed
-        if isinstance(pcd, list):
-            if not pcd:
-                print("[WARN] Empty point cloud list.")
-                return []
-            
-            # Extract xyz coordinates from dictionaries
-            points = np.array([[p['x'], p['y'], p['z']] for p in pcd])
-            
-            # Create Open3D PointCloud
+            # Convert list to Open3D PointCloud
+            points = np.array([[p['x'], p['y'], p['z']] for p in points_3d])
             o3d_pcd = o3d.geometry.PointCloud()
             o3d_pcd.points = o3d.utility.Vector3dVector(points)
-        elif isinstance(pcd, o3d.geometry.PointCloud):
-            o3d_pcd = pcd
-        else:
-            raise TypeError(f"Unsupported point cloud type: {type(pcd)}")
-        #remove back ground
-        o3d_pcd = self.remove_plane_background(o3d_pcd, distance_threshold=0.03) 
-        # Remove outliers
-        pcd_clean, _ = o3d_pcd.remove_statistical_outlier(nb_neighbors=20, std_ratio=2.0)
-        
-        pcd_uniform = pcd_clean.voxel_down_sample(voxel_size=self.voxel_size)
-        
-        # Stima delle normali
-        pcd_uniform.estimate_normals(
-            search_param=o3d.geometry.KDTreeSearchParamHybrid(
-                radius=self.voxel_size * 5, max_nn=30
+            self.get_logger().info(f"Initial point cloud: {len(o3d_pcd.points)} points")
+            
+            # Step 1: Remove plane background with RANSAC
+            # o3d_pcd = self.remove_plane_background(o3d_pcd, distance_threshold=0.03)
+            # self.get_logger().info(f"After plane removal: {len(o3d_pcd.points)} points")
+            
+            # if len(o3d_pcd.points) == 0:
+            #     self.get_logger().warn(f"No points remaining after plane removal for {obj['label']}")
+            #     continue
+            
+            # Step 1b: Remove floor plane
+            o3d_pcd = self.remove_floor_plane(o3d_pcd, floor_z_threshold=0.001, min_height=0.001)
+            self.get_logger().info(f"After floor removal: {len(o3d_pcd.points)} points")
+            
+            if len(o3d_pcd.points) == 0:
+                self.get_logger().warn(f"No points remaining after floor removal for {obj['label']}")
+                continue
+            
+            # Step 2: Remove background based on robot position
+            o3d_pcd = self.remove_background_from_robot(o3d_pcd, distance_threshold=6.0)
+            self.get_logger().info(f"After robot distance filter: {len(o3d_pcd.points)} points")
+            
+            if len(o3d_pcd.points) == 0:
+                self.get_logger().warn(f"No points remaining after robot distance filter for {obj['label']}")
+                continue
+            
+            # Step 3: Remove statistical outliers
+            o3d_pcd, _ = o3d_pcd.remove_statistical_outlier(nb_neighbors=20, std_ratio=2.0)
+            self.get_logger().info(f"After outlier removal: {len(o3d_pcd.points)} points")
+            
+            if len(o3d_pcd.points) == 0:
+                self.get_logger().warn(f"No points remaining after outlier removal for {obj['label']}")
+                continue
+            
+            # Step 4: Voxel downsampling
+            o3d_pcd = o3d_pcd.voxel_down_sample(voxel_size=self.voxel_size)
+            self.get_logger().info(f"After voxel downsampling: {len(o3d_pcd.points)} points")
+            
+            if len(o3d_pcd.points) == 0:
+                self.get_logger().warn(f"No points remaining after downsampling for {obj['label']}")
+                continue
+            
+            # Step 5: Estimate and orient normals
+            o3d_pcd.estimate_normals(
+                search_param=o3d.geometry.KDTreeSearchParamHybrid(
+                    radius=self.voxel_size * 5, max_nn=30
+                )
             )
-        )
-        # Orienta le normali in modo consistente
-        pcd_uniform.orient_normals_consistent_tangent_plane(30)
-        
-        # Convert back to list format if input was a list
-        if isinstance(pcd, list):
-            filtered_points = np.asarray(pcd_uniform.points)
-            return [{'x': float(p[0]), 'y': float(p[1]), 'z': float(p[2])} 
-                    for p in filtered_points]
-        
-        return pcd_uniform
+            o3d_pcd.orient_normals_consistent_tangent_plane(30)
+            self.get_logger().info(f"Normals estimated and oriented")
+            
+            # Convert back to list format
+            filtered_points = np.asarray(o3d_pcd.points)
+            filtered_points_list = [{'x': float(p[0]), 'y': float(p[1]), 'z': float(p[2])} 
+                                   for p in filtered_points]
+            
+            # Update the object with filtered points
+            obj['points_3d'] = filtered_points_list
+            
+            self.get_logger().info(f"Filtering complete: {len(filtered_points_list)} final points")
+            
+            # Save the filtered point cloud with robot name
+            self.save_object_pointcloud(self.ply_filtered_dir, f"{obj['label']}_filtered_{self.robot_namespace}", filtered_points_list, obj['id'])
     
-    def remove_plane_background(self, o3d_pcd, distance_threshold=0.02, ransac_n=3, num_iterations=1000, plane_type='floor'):
-
+    def remove_plane_background(self, o3d_pcd, distance_threshold=0.1, ransac_n=3, num_iterations=1000):
         # 1. RANSAC to segment the plane
         plane_model, inliers = o3d_pcd.segment_plane(
             distance_threshold=distance_threshold,
@@ -609,29 +647,110 @@ class ObjectDetectionNode(Node):
         inlier_indices = set(inliers)
         # Gli outlier sono la differenza: tutti i punti - punti del piano
         outlier_indices = list(all_indices - inlier_indices)
-        # Estrai la nuvola di punti 
+        # Estrai la nuvola di punti utili (quindi toglie il piano)
         pcd_foreground = o3d_pcd.select_by_index(outlier_indices)
-        # TODO: Rimozione dei componenti connessi più piccoli (rumore galleggiante)*
-            # Se la nuvola di punti risultante è ancora troppo grande e include oggetti indesiderati,
-            # si può applicare qui una rimozione dei cluster per tenere solo l'oggetto più grande.
         
         if len(pcd_foreground.points) > 0:
             with o3d.utility.VerbosityContextManager(o3d.utility.VerbosityLevel.Error):
-                # Identifica i cluster
-                labels = np.array(pcd_foreground.cluster_dbscan(eps=0.05, min_points=10))
+                labels = np.array(pcd_foreground.cluster_dbscan(eps=0.05, min_points=20))
                 
             if len(labels) > 0:
-                # Trova l'etichetta del cluster più grande
                 unique_labels, counts = np.unique(labels, return_counts=True)
                 if unique_labels.size > 0 and unique_labels[0] != -1: 
                     largest_cluster_label = unique_labels[np.argmax(counts)]
-                    
-                    # Seleziona solo i punti che appartengono al cluster più grande
                     pcd_foreground = pcd_foreground.select_by_index(
                         np.where(labels == largest_cluster_label)[0]
                     )
 
         return pcd_foreground
+    
+    def remove_floor_plane(self, o3d_pcd, floor_z_threshold=0.001, min_height=0.001):
+        if len(o3d_pcd.points) == 0:
+            return o3d_pcd
+        
+        points = np.asarray(o3d_pcd.points)
+        
+        # Find the minimum Z value (likely the floor)
+        min_z = np.min(points[:, 2])
+        
+        self.get_logger().info(f"Detected floor at Z = {min_z:.3f}m")
+        
+        # Keep only points above floor + min_height
+        mask = points[:, 2] > (min_z + min_height)
+        
+        # Alternative: use absolute threshold if you know the floor height
+        # mask = points[:, 2] > floor_z_threshold
+        
+        filtered_pcd = o3d.geometry.PointCloud()
+        filtered_pcd.points = o3d.utility.Vector3dVector(points[mask])
+        
+        # Copy normals if they exist
+        if o3d_pcd.has_normals():
+            normals = np.asarray(o3d_pcd.normals)
+            filtered_pcd.normals = o3d.utility.Vector3dVector(normals[mask])
+        
+        # Copy colors if they exist
+        if o3d_pcd.has_colors():
+            colors = np.asarray(o3d_pcd.colors)
+            filtered_pcd.colors = o3d.utility.Vector3dVector(colors[mask])
+        
+        removed_count = len(points) - len(filtered_pcd.points)
+        self.get_logger().info(
+            f"Removed {removed_count} floor points below Z = {min_z + min_height:.3f}m"
+        )
+        
+        return filtered_pcd
+    
+    def remove_background_from_robot(self, o3d_pcd, distance_threshold=6.0):
+        if self.current_robot_position is None:
+            self.get_logger().warn("No robot position available, skipping robot-based background removal")
+            return o3d_pcd
+        
+        if len(o3d_pcd.points) == 0:
+            return o3d_pcd
+        
+        # Get robot position in odom frame
+        robot_x = self.current_robot_position['x']
+        robot_y = self.current_robot_position['y']
+        robot_z = self.current_robot_position['z']
+        
+        # Convert point cloud to numpy array
+        points = np.asarray(o3d_pcd.points)
+        
+        # Calculate distance from robot to each point (using only x,y for horizontal distance)
+        distances = np.sqrt(
+            (points[:, 0] - robot_x) ** 2 + 
+            (points[:, 1] - robot_y) ** 2
+        )
+        
+        # Filter points within distance threshold
+        mask = distances <= distance_threshold
+        
+        # Create filtered point cloud
+        filtered_pcd = o3d.geometry.PointCloud()
+        filtered_pcd.points = o3d.utility.Vector3dVector(points[mask])
+        
+        # Copy normals if they exist
+        if o3d_pcd.has_normals():
+            normals = np.asarray(o3d_pcd.normals)
+            filtered_pcd.normals = o3d.utility.Vector3dVector(normals[mask])
+        
+        # Copy colors if they exist
+        if o3d_pcd.has_colors():
+            colors = np.asarray(o3d_pcd.colors)
+            filtered_pcd.colors = o3d.utility.Vector3dVector(colors[mask])
+        
+        removed_count = len(points) - len(filtered_pcd.points)
+        self.get_logger().info(
+            f"Removed {removed_count} background points beyond {distance_threshold}m from robot "
+            f"(at position [{robot_x:.2f}, {robot_y:.2f}, {robot_z:.2f}])"
+        )
+        
+        return filtered_pcd
+    
+    
+    
+    
     def __del__(self):
         if self.cuda_available:
             torch.cuda.empty_cache()

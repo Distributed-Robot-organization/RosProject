@@ -1,4 +1,4 @@
-from venv import logger
+import logging
 import open3d as o3d
 import numpy as np
 import copy
@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import json
 import yaml
+from datetime import datetime
 
 class PointCloudProcessor:
        
@@ -15,7 +16,14 @@ class PointCloudProcessor:
         self.ply_directory = Path(ply_directory)
         self.ply_save_directory = Path(ply_save_directory)
         self.yaml_file = yaml_file
-        self.logger = logger if logger is not None else __import__('logging').getLogger(__name__)
+        self.logger = logger if logger is not None else logging.getLogger(__name__)
+        
+        # Create directories if they don't exist
+        self.ply_directory.mkdir(parents=True, exist_ok=True)
+        self.ply_save_directory.mkdir(parents=True, exist_ok=True)
+        
+        print(f"PLY directory: {self.ply_directory} (created if didn't exist)")
+        print(f"PLY save directory: {self.ply_save_directory} (created if didn't exist)")
         
         if not os.path.exists(ply_directory):
             raise FileNotFoundError(f"Directory does not exist: {ply_directory}")
@@ -48,6 +56,8 @@ class PointCloudProcessor:
         
     def load_ply_files(self):
         cloud_list = []
+        # Ensure directory exists
+        self.ply_directory.mkdir(parents=True, exist_ok=True)
         ply_files = sorted(Path(self.ply_directory).glob("*.ply"))
         for ply in ply_files:
             pcd = o3d.io.read_point_cloud(str(ply))
@@ -62,16 +72,160 @@ class PointCloudProcessor:
             search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=voxel_size * 5, max_nn=30))
         pcd_uniform.orient_normals_consistent_tangent_plane(30)
         return pcd_uniform
+        
+    def remove_floor_points_ransac(self, pcd, distance_threshold=0.01, ransac_n=3, num_iterations=1000):
+        points = np.asarray(pcd.points)
+        
+        if len(points) == 0:
+            return pcd
+        
+        # Use RANSAC to detect the dominant plane
+        plane_model, inliers = pcd.segment_plane(
+            distance_threshold=distance_threshold,
+            ransac_n=ransac_n,
+            num_iterations=num_iterations
+        )
+        
+        [a, b, c, d] = plane_model
+        print(f"Detected plane equation: {a:.3f}x + {b:.3f}y + {c:.3f}z + {d:.3f} = 0")
+        
+        # Check if it's a horizontal plane (normal should be mostly vertical)
+        normal = np.array([a, b, c])
+        normal = normal / np.linalg.norm(normal)
+        
+        # Angle between plane normal and vertical axis (z-axis)
+        vertical = np.array([0, 0, 1])
+        angle = np.arccos(np.abs(np.dot(normal, vertical)))
+        angle_deg = np.degrees(angle)
+        
+        print(f"Plane normal: {normal}")
+        print(f"Angle from vertical: {angle_deg:.1f}°")
+        
+        # Only remove if it's approximately horizontal (angle < 15 degrees)
+        if angle_deg < 15:
+            # Remove the inliers (floor points)
+            pcd_no_floor = pcd.select_by_index(inliers, invert=True)
+            
+            removed_count = len(inliers)
+            kept_count = len(pcd_no_floor.points)
+            
+            print(f"Removed {removed_count} floor points (kept {kept_count} points)")
+            return pcd_no_floor
+        else:
+            print(f"Detected plane is not horizontal (angle {angle_deg:.1f}°), keeping all points")
+            return pcd
+
+    def remove_floor_points_histogram(self, pcd, bin_size=0.01, floor_percentile=10, z_margin=0.02):
+        points = np.asarray(pcd.points)
+        
+        if len(points) == 0:
+            return pcd
+        
+        z_values = points[:, 2]
+        
+        # Create histogram of Z values
+        hist, bin_edges = np.histogram(z_values, bins=int((z_values.max() - z_values.min()) / bin_size))
+        
+        # Find the Z level with most points (likely the floor)
+        max_bin_idx = np.argmax(hist)
+        floor_level = (bin_edges[max_bin_idx] + bin_edges[max_bin_idx + 1]) / 2
+        
+        print(f"Detected floor level at Z = {floor_level:.4f} (bin with {hist[max_bin_idx]} points)")
+        
+        # Keep points above floor + margin
+        threshold = floor_level + z_margin
+        mask = points[:, 2] > threshold
+        filtered_points = points[mask]
+        
+        # Create new point cloud
+        pcd_no_floor = o3d.geometry.PointCloud()
+        pcd_no_floor.points = o3d.utility.Vector3dVector(filtered_points)
+        
+        # Copy colors and normals if available
+        if pcd.has_colors():
+            colors = np.asarray(pcd.colors)
+            pcd_no_floor.colors = o3d.utility.Vector3dVector(colors[mask])
+        
+        if pcd.has_normals():
+            normals = np.asarray(pcd.normals)
+            pcd_no_floor.normals = o3d.utility.Vector3dVector(normals[mask])
+        
+        removed_count = len(points) - len(filtered_points)
+        print(f"Removed {removed_count} floor points (kept {len(filtered_points)} points)")
+        
+        return pcd_no_floor
+
+    def remove_floor_points_adaptive(self, pcd, num_bins=50, prominence_factor=2.0, z_margin=0.02):
+        from scipy.signal import find_peaks
+        
+        points = np.asarray(pcd.points)
+        
+        if len(points) == 0:
+            return pcd
+        
+        z_values = points[:, 2]
+        
+        # Create histogram
+        hist, bin_edges = np.histogram(z_values, bins=num_bins)
+        bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+        
+        # Find peaks in histogram
+        peaks, properties = find_peaks(hist, prominence=hist.max() / prominence_factor)
+        
+        if len(peaks) == 0:
+            print("No prominent peaks found, using minimum Z value")
+            floor_level = z_values.min()
+        else:
+            # The floor is likely the lowest prominent peak
+            floor_peak_idx = peaks[0]
+            floor_level = bin_centers[floor_peak_idx]
+            print(f"Found {len(peaks)} prominent levels, floor at Z = {floor_level:.4f}")
+        
+        # Keep points above floor + margin
+        threshold = floor_level + z_margin
+        mask = points[:, 2] > threshold
+        filtered_points = points[mask]
+        
+        # Create new point cloud
+        pcd_no_floor = o3d.geometry.PointCloud()
+        pcd_no_floor.points = o3d.utility.Vector3dVector(filtered_points)
+        
+        # Copy colors and normals if available
+        if pcd.has_colors():
+            colors = np.asarray(pcd.colors)
+            pcd_no_floor.colors = o3d.utility.Vector3dVector(colors[mask])
+        
+        if pcd.has_normals():
+            normals = np.asarray(pcd.normals)
+            pcd_no_floor.normals = o3d.utility.Vector3dVector(normals[mask])
+        
+        removed_count = len(points) - len(filtered_points)
+        print(f"Removed {removed_count} floor points (kept {len(filtered_points)} points)")
+        
+        return pcd_no_floor
+    
+    def remove_floor_points(self, pcd, method='histogram', **kwargs):
+
+        if method == 'ransac':
+            return self.remove_floor_points_ransac(pcd, **kwargs)
+        elif method == 'histogram':
+            return self.remove_floor_points_histogram(pcd, **kwargs)
+        elif method == 'adaptive':
+            return self.remove_floor_points_adaptive(pcd, **kwargs)
+        else:
+            raise ValueError(f"Unknown method: {method}")
     
     def process_all_pointclouds(self):
         processed = []
         for pcd in self.raw_clouds:
             pcd_proc = self.clean_and_smooth_point_cloud(pcd)
+            pcd_proc = self.remove_floor_points(pcd_proc)
             print(f"Processed points: {len(pcd_proc.points)}")
-            processed.append(pcd_proc)
+            #processed.append(pcd_proc)
+            processed.append(pcd)
         return processed
     
-    def guassian_distribution_point_clouds(self, processed, variance=1.5):
+    def guassian_distribution_point_clouds(self, processed, variance=1.0):
         
         for pcd in processed:
             points = np.asarray(pcd.points)
@@ -85,12 +239,11 @@ class PointCloudProcessor:
             order = np.argsort(eigvals)[::-1]
             eigvals = eigvals[order]
             eigvecs = eigvecs[:, order]
-
             points_pca = centered @ eigvecs
             dist_elliptic = np.sqrt(
-                (points_pca[:,0]/np.sqrt(eigvals[0]))**2 +
-                (points_pca[:,1]/np.sqrt(eigvals[1]))**2 +
-                (points_pca[:,2]/np.sqrt(eigvals[2]))**2
+                # # (points_pca[:,0]/np.sqrt(eigvals[0]))**2 +
+                (points_pca[:,1]/np.sqrt(eigvals[1]))**2 
+                # (points_pca[:,2]/np.sqrt(eigvals[2]))**2
             )
 
             observations = np.exp(-(dist_elliptic**2) / (2 * variance**2))
@@ -171,10 +324,7 @@ class PointCloudProcessor:
         return self.boxxes
     
     def create_clusters_boxxes(self, observation_threshold=0.2, eps=0.1, min_samples=3, min_cluster_size=15):
-        """
-        Create clusters of boxes with low observation values.
-        Groups nearby boxes with avg_observation below threshold into regions.
-        """
+    
         if len(self.boxxes) == 0:
             print("No boxes available. Run create_boxxes() first.")
             return
@@ -244,6 +394,15 @@ class PointCloudProcessor:
         print(f"Created {len(self.clusters_boxxes)} clusters from low-observation boxes")
         return self.clusters_boxxes
     
+    def avg_obs_all_cells(self):
+        observations = [box['avg_observation'] for box in self.boxxes if box['avg_observation'] is not None]
+        if len(observations) == 0:
+            print("No observations available to calculate average.")
+            return None
+        mean_observation = np.mean(observations)
+        print(f"Average observation across all cells: {mean_observation}")
+        return mean_observation
+    
     def save_boxxes_json(self, filename="boxxes_object.json"):
         if len(self.boxxes) == 0:
             print("ATTENTION NO BOXES TO SAVE")
@@ -280,6 +439,18 @@ class PointCloudProcessor:
             print(f"data saved to: {filepath}")
         except Exception as e:
             print(f"Error saving JSON file: {e}")
+        
+        # Save to history folder
+        history_dir = self.ply_save_directory / "history_all_json"
+        history_dir.mkdir(parents=True, exist_ok=True)
+        
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        history_filename = filename.replace(".json", f"_{timestamp}.json")
+        history_path = history_dir / history_filename
+        with open(history_path, 'w') as f:
+            json.dump(data_boxxes, f, indent=4)
+        print(f"JSON also saved to history: {history_path}")
+        
 
     def save_point_cloud(self):
         if len(self.point_t) == 0:
@@ -295,8 +466,17 @@ class PointCloudProcessor:
         
         o3d.io.write_point_cloud(self.ply_save_directory / "complete_cloud.ply", pcd)
         print(f"Point cloud saved to {self.ply_save_directory / 'complete_cloud.ply'}")
+        
+        history_dir = self.ply_save_directory / "history_all_mesh"
+        history_dir.mkdir(parents=True, exist_ok=True)
+        
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        history_path = history_dir / f"complete_cloud_{timestamp}.ply"
+        
+        o3d.io.write_point_cloud(str(history_path), pcd)
+        print(f"Point cloud also saved to {history_path}")
 
-    def join_old_and_actual_values_boxxes(self):
+    def join_old_and_actual_values_boxxes(self, add_obs_value= 0.1):
         json_filepath = self.ply_save_directory / "boxxes_object.json"
         
         # Check if previous data exists
@@ -309,17 +489,39 @@ class PointCloudProcessor:
                 old_data = json.load(f)
             
             print(f"Loaded {len(old_data)} previous boxes from JSON")
-            
-            # Extract all old point_t data
+            current_points_np = None
+            if len(self.point_t) > 0:
+                current_points_np = np.array([p[0] for p in self.point_t])
+
             old_point_t = []
+            
             for cell_data in old_data:
+                
+                box_min = np.array(cell_data['pose_box']['min_bound'])
+                box_max = np.array(cell_data['pose_box']['max_bound'])
+                
+                cell_centroid = np.array(cell_data['centroid'])
+                
+                
+                is_visited_again = False
+                
+                if current_points_np is not None and len(current_points_np) > 0:
+                    mask = np.all((current_points_np >= box_min) & (current_points_np <= box_max), axis=1)
+                    if np.any(mask):
+                        is_visited_again = True
+                
+                
+                
                 if cell_data['point_t_cell'] is not None:
                     # Convert back from JSON format to internal format
                     for p in cell_data['point_t_cell']:
                         point = np.array(p[0], dtype=float)
                         obs = float(p[1])                  
                         col = p[2]
-                        old_point_t.append([point, obs, col])
+                        if is_visited_again:
+                            obs += add_obs_value
+                            obs = min(obs, 1.0)
+                        old_point_t.append([point, obs, col, cell_centroid])
             
             print(f"Extracted {len(old_point_t)} old points")
             print(f"Current points: {len(self.point_t)}")
@@ -349,7 +551,16 @@ class PointCloudProcessor:
             print(f"Error loading or merging data: {e}")
     
     def eliminate_ply_files(self):
+        # Ensure directory exists before trying to delete files
+        if not self.ply_directory.exists():
+            print(f"Directory {self.ply_directory} does not exist, nothing to delete")
+            return
+            
         ply_files = sorted(Path(self.ply_directory).glob("*.ply"))
+        if not ply_files:
+            print(f"No PLY files found in {self.ply_directory}")
+            return
+            
         for ply in ply_files:
             try:
                 os.remove(ply)
@@ -377,6 +588,8 @@ class PointCloudProcessor:
     
     
     def detect_object_type_from_ply(self):
+        # Ensure directory exists
+        self.ply_directory.mkdir(parents=True, exist_ok=True)
         ply_files = sorted(self.ply_directory.glob("*.ply"))
         
         if not ply_files:
@@ -384,7 +597,13 @@ class PointCloudProcessor:
             return None
         
         first_file = ply_files[0].stem  # Get filename without extension
-        object_type = first_file.split('_')[0]  # Get first word
+        
+        if "_filtered" in first_file:
+            object_type = first_file.split("_filtered")[0]
+        else:
+            # Fallback: take everything before last underscore
+            parts = first_file.split('_')
+            object_type = '_'.join(parts[:-1]) if len(parts) > 1 else first_file
         
         print(f"Detected object type: '{object_type}' from file: {ply_files[0].name}")
         return object_type.lower()
@@ -399,7 +618,7 @@ class PointCloudProcessor:
         center_2d[2] = 0.0
         if len(self.clusters_boxxes) == 0:
             print("No clusters available to distribute on circle")
-            return
+            return new_centroids, center_2d, radius_circle
         
         # Calculate angle step for evenly distributed clusters
         num_clusters = len(self.clusters_boxxes)
@@ -438,6 +657,7 @@ class PointCloudProcessor:
             print(f"    Angle: {np.degrees(angle):.1f}°, Distance moved: {distance_moved:.3f}")
         
         print("Cluster centroids projected onto circle at their radial positions")
+        
         return new_centroids, center_2d, radius_circle
     
     def full_pipeline(self, robot_poses=None):
@@ -463,15 +683,23 @@ class PointCloudProcessor:
         self.logger.info(f"Detected object type from PLY: {object_type_ply}")
         
         new_centroids, center_2d, radius_circle = self.centorids_on_circle(objs_names_yaml, object_type_ply)
+        # compute average observation
+        mean_observation = self.avg_obs_all_cells()
+        if not new_centroids:
+            print("No new centroids calculated, skipping visualization on circle. FINISH!!!!")
+            self.save_point_cloud()
+            self.save_boxxes_json()
+            self.eliminate_ply_files()
+            return [], center_2d, mean_observation 
+        
         self.visualize_cluster_boxxes_with_new_centroids(new_centroids, center_2d, radius_circle)
         
         # save point and boxes
         self.save_point_cloud()
         self.save_boxxes_json()
         self.eliminate_ply_files()
-        return new_centroids, self.big_box['center']      
-        
-      
+        return new_centroids, self.big_box['center'], mean_observation      
+          
     def visualize_point_t(self):
         if len(self.point_t) == 0:
             print("No point_t data available. Run guassian_distribution_point_clouds() first.")
@@ -590,9 +818,6 @@ class PointCloudProcessor:
         o3d.visualization.draw_geometries(geometries)
     
     def visualize_cluster_boxxes(self):
-        """
-        Visualize clusters with their centroids and the main bounding box.
-        """
         if len(self.clusters_boxxes) == 0:
             print("No clusters available. Run create_clusters_boxxes() first.")
             return
@@ -688,10 +913,6 @@ class PointCloudProcessor:
         return [robot_body, frame, arrow]
     
     def visualize_cluster_boxxes_with_new_centroids(self, new_centroids, center_2d, radius_circle):
-        """
-        Visualize clusters with both original centroids and new centroids positioned on circle.
-        Shows the circle, connecting lines, and robot frames.
-        """
         if len(self.clusters_boxxes) == 0:
             print("No clusters available. Run create_clusters_boxxes() first.")
             return
@@ -811,7 +1032,8 @@ def main():
     ply_directory = "/ros2_ws/src/working_directory/point_cloud/filtered_ply"
     # where to save processed .ply files --> in mesh folder save also the .ply and the mesh files
     ply_save_directory = "/ros2_ws/src/working_directory/mesh"
-    processor = PointCloudProcessor(ply_directory=ply_directory, ply_save_directory=ply_save_directory)
+    yaml_file = "/ros2_ws/src/main_logic/config/object_params.yaml"
+    processor = PointCloudProcessor(ply_directory=ply_directory, ply_save_directory=ply_save_directory, yaml_file=yaml_file)
 
     processor.full_pipeline()
     # processor.visualize_point_cloud()
