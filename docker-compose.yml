@@ -41,4 +41,5 @@ services:
 
 
 # docker exec -it ros_docker bash
+# git submodule update --init --recursive
 # colcon build --symlink-install --parallel-workers 1 && source install/setup.bash 
