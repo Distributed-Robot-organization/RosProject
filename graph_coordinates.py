@@ -9,15 +9,10 @@ class ScanningAnalyzer:
     def __init__(self, json_directory, ply_directory, real_centroid):
         self.json_directory = Path(json_directory)
         self.ply_directory = Path(ply_directory)
+        self.real_centroid = real_centroid
         
-        # Ensure real_centroid is a numpy array
-        self.real_centroid = np.array(real_centroid)
-        
-        # Data containers
         self.iterations_data = []
         self.point_clouds = []
-        
-        # Analysis results
         self.json_centroids = []       # Centroids calculated from JSON box data
         self.avg_observations = []     # Avg observation values from JSON
         self.point_cloud_centroids = [] # Centroids calculated from actual PLY geometry
@@ -149,11 +144,6 @@ class ScanningAnalyzer:
                 vis.destroy_window()
 
     def centroid_errors(self):
-        """
-        Calculates the Euclidean distance error between the calculated PLY centroid
-        and the real centroid (self.real_centroid).
-        Generates a progression plot.
-        """
         if self.real_centroid is None:
             print("Error: self.real_centroid is not set.")
             return
@@ -283,8 +273,6 @@ class ScanningAnalyzer:
         plt.title('Scanning Coverage Quality', fontsize=14, fontweight='bold')
         plt.grid(True, alpha=0.3, linestyle='--')
         
-        # --- RESTORED SCALING LOGIC ---
-        # Set y-axis limits to zoom on variations
         if self.avg_observations:
             min_obs = min(self.avg_observations)
             max_obs = max(self.avg_observations)
@@ -292,7 +280,6 @@ class ScanningAnalyzer:
             # Calculate dynamic margin (10% of the range) or fixed if flat
             margin = (max_obs - min_obs) * 0.1 if max_obs > min_obs else 0.05
             plt.ylim(min_obs - margin, max_obs + margin)
-        # ------------------------------
 
         # Trend line calculation
         if len(iterations) > 1:

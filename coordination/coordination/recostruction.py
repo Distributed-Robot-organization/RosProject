@@ -165,7 +165,6 @@ class PointCloudProcessor:
         
         z_values = points[:, 2]
         
-        # Create histogram
         hist, bin_edges = np.histogram(z_values, bins=num_bins)
         bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
         
@@ -217,11 +216,12 @@ class PointCloudProcessor:
     
     def process_all_pointclouds(self):
         processed = []
+        
         for pcd in self.raw_clouds:
             pcd_proc = self.clean_and_smooth_point_cloud(pcd)
             pcd_proc = self.remove_floor_points(pcd_proc)
             print(f"Processed points: {len(pcd_proc.points)}")
-            #processed.append(pcd_proc)
+            #processed.append(pcd_proc)     # NOTA ora non usa filter !!
             processed.append(pcd)
         return processed
     
@@ -322,7 +322,7 @@ class PointCloudProcessor:
         non_empty_cells = sum(1 for box in self.boxxes if box['point_t_cell'] is not None)
         print(f"Created {len(self.boxxes)} cells ({non_empty_cells} non-empty) with grid divisions {grid_divisions}")
         return self.boxxes
-    
+    # def create_clusters_boxxes(self, observation_threshold=0.15, eps=0.1, min_samples=7, min_cluster_size=20): # for hydrant
     def create_clusters_boxxes(self, observation_threshold=0.2, eps=0.1, min_samples=3, min_cluster_size=15):
     
         if len(self.boxxes) == 0:
@@ -479,7 +479,6 @@ class PointCloudProcessor:
     def join_old_and_actual_values_boxxes(self, add_obs_value= 0.1):
         json_filepath = self.ply_save_directory / "boxxes_object.json"
         
-        # Check if previous data exists
         if not json_filepath.exists():
             print(f"No JSON file found at {json_filepath}. Skipping merge.")
             return
@@ -596,7 +595,7 @@ class PointCloudProcessor:
             print("No PLY files found to detect object type")
             return None
         
-        first_file = ply_files[0].stem  # Get filename without extension
+        first_file = ply_files[0].stem  
         
         if "_filtered" in first_file:
             object_type = first_file.split("_filtered")[0]

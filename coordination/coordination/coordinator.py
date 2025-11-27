@@ -81,7 +81,6 @@ class CoordinatorPcl(Node):
         
         try:   
             
-            # Run full pipeline
             new_points, global_centroid, mean_observation = self.processor.full_pipeline(self.robot_poses)
             if not new_points or len(new_points) == 0:
                 self.get_logger().warn("No new centroids found - object detection complete")
@@ -100,13 +99,11 @@ class CoordinatorPcl(Node):
                 
                 self.next_array_pose.publish(pose_array)
                 
-                # Pubblica mean observation
                 if mean_observation is not None:
                     mean_obs_msg = Float32()
                     mean_obs_msg.data = float(mean_observation)
                     self.mean_observation_pub.publish(mean_obs_msg)
                 
-                # Pubblica tick
                 tick_msg = Bool()
                 tick_msg.data = True
                 self.tick_service_coordination_pub.publish(tick_msg)
@@ -133,17 +130,15 @@ class CoordinatorPcl(Node):
                 pose.position.x = float(point[0])
                 pose.position.y = float(point[1])
                 pose.position.z = float(point[2])
-                pose.orientation.w = 1.0 # Neutral orientation
+                pose.orientation.w = 1.0 
                 pose_array.poses.append(pose)
             
-            # Publish mean observation
             if mean_observation is not None:
                 mean_obs_msg = Float32()
                 mean_obs_msg.data = float(mean_observation)
                 self.mean_observation_pub.publish(mean_obs_msg)
                 self.get_logger().info(f"Published mean observation: {mean_observation:.4f}")
                 
-            # Publish PoseArray
             self.next_array_pose.publish(pose_array)
             
             self.get_logger().info(
