@@ -91,16 +91,5 @@ jobs:
         run: |
           source /opt/ros/${{ matrix.ros_distribution }}/setup.bash
           cd ros_ws
-          colcon build --packages-select \
-            obstacles_msgs \
-            interfaces_pkg \
-            shelfino_description \
-            shelfino_gazebo \
-            shelfino_navigation \
-            vision_system \
-            navigation_system \
-            main_logic \
-            coordination \
-            planning_pkg \
-            projects \
-            --symlink-install --parallel-workers 1 && source install/setup.bash
+          colcon build --symlink-install --parallel-workers 1
+          source install/setup.bash

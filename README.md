@@ -2,7 +2,12 @@
 
 # Project Overview:
 
-The project develops a distributed system for 3D recostruction using multiple robots equipped with RGB-D cameras. Each robot captures depth and data from its environment, processes this data locally to create partial 3D maps, and then shares these maps with other robots in the network. the system allows fotr the accurate acquisition of point clouds without using external markers, thanks to object recognition using computer vision techniques and cooperation between robots. The approach combines distributed robotics logic and artificial intelligence to achieve more efficient, scalable, and autonomous digitization, with potential applications in advanced manufacturing, industrial inspection, cultural heritage conservation, and digital twin generation for simulation and optimization.
+The project develops a distributed system for 3D recostruction using multiple robots equipped with RGB-D cameras. Each robot captures depth and data from its environment, processes this data locally to create partial 3D maps, and then shares these maps with other robots in the network. the system allows for the accurate acquisition of point clouds without using external markers, thanks to object recognition using computer vision techniques and cooperation between robots. The approach combines distributed robotics logic and artificial intelligence to achieve more efficient, scalable, and autonomous digitization, with potential applications in advanced manufacturing, industrial inspection, cultural heritage conservation, and digital twin generation for simulation and optimization.
+
+- **Application example**: [click_this_video](https://drive.google.com/file/d/1Gm1Z-N392XYB5f-1UEUIwiqYFy-VXsYd/view?usp=sharing).
+
+- **Tutorial to run the project using docker**: [click_this_video](https://drive.google.com/file/d/1gVzZNxXPb-tmIKGCUGg_D4chn_cVemHj/view?usp=sharing).
+
 
 
 # Index:
@@ -53,6 +58,8 @@ Chapters:
 # Simulation Scene:
 The simulation environment is set up in Gazebo, featuring a warehouse-like setting with multiple objects to be scanned by the robots. Each Shelfino robot is equipped with an RGB-D camera for depth sensing and object recognition.
 
+- **Application example**: [click_this_video](https://drive.google.com/file/d/1Gm1Z-N392XYB5f-1UEUIwiqYFy-VXsYd/view?usp=sharing).
+
 # Components:
 
 ## Navigation System
@@ -83,7 +90,7 @@ This is the core system that integrates all the other components. It manages the
 
 > Note: Docker use 20 GB for this project
 
-To simplify the setup process and ensure all ROS 2 and project dependencies are correctly installed, we recommend using Docker. You can also follow this step-by-step [tutorial video](link_tutorial).
+To simplify the setup process and ensure all ROS 2 and project dependencies are correctly installed, we recommend using Docker. You can also follow this step-by-step [tutorial video](https://drive.google.com/file/d/1gVzZNxXPb-tmIKGCUGg_D4chn_cVemHj/view?usp=sharing).
 
 ### Clone the Repository: 
 
