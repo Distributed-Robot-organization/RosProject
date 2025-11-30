@@ -68,6 +68,13 @@ jobs:
         uses: actions/checkout@v4
         with:
           path: ros_ws/src
+          submodules: 'recursive'
+          token: ${{ secrets.GH_TOKEN }}
+
+      - name: Update submodules
+        run: |
+          cd ros_ws/src
+          git submodule update --init --recursive
 
       - name: Setup git credentials
         run: |
@@ -101,5 +108,4 @@ jobs:
             coordination \
             planning_pkg \
             projects \
-            --symlink-install --parallel-workers 1 && source install/setup.bash 
-          
+            --symlink-install --parallel-workers 1 && source install/setup.bash
