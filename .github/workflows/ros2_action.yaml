@@ -58,13 +58,13 @@ jobs:
         run: |
           pip3 install pyserial shapely flask xmlschema pyyaml
 
-
-      - name: Checkout code and setup workspace
+      - name: Checkout code
         uses: actions/checkout@v4
         with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          repository: Distributed-Robot-organization/RosProject
           path: ros_ws/src
-          submodules: 'recursive'
-          token: ${{ secrets.GH_TOKEN }}
+          submodules: recursive
 
       - name: Update submodules
         run: |
