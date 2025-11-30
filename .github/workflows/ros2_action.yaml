@@ -54,9 +54,19 @@ jobs:
           ros-humble-topic-tools && \
           rm -rf /var/lib/apt/lists/*
 
+      - name: Free up disk space
+        run: |
+          df -h
+          apt-get clean
+          rm -rf /var/lib/apt/lists/*
+          rm -rf /tmp/*
+          df -h
+
       - name: Install Python packages
         run: |
-          pip3 install pyserial flask flask-ask-sdk ask-sdk xmlschema pyyaml shapely notebook ultralytics open3d torch torchvision pyyaml
+          pip3 install --no-cache-dir --break-system-packages \
+          pyserial flask flask-ask-sdk ask-sdk xmlschema pyyaml shapely \
+          notebook ultralytics open3d torch torchvision
 
       - name: Checkout code and setup workspace
         uses: actions/checkout@v4
