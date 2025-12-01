@@ -32,17 +32,17 @@ def generate_mesh(pcd):
         print(f"Mesh generated with {len(mesh.vertices)} vertices and {len(mesh.triangles)} triangles")
         return mesh
 
-def draw_registration_result(source, target, transformation):
+def draw_comparisons(source, target, title="BHO"):
     source_temp = copy.deepcopy(source)
     target_temp = copy.deepcopy(target)
-    source_temp.transform(transformation)
-    o3d.visualization.draw_geometries([source_temp, target_temp])
+    source_temp.paint_uniform_color([1, 0.706, 0])
+    target_temp.paint_uniform_color([0, 0.651, 0.929])
+    o3d.visualization.draw_geometries([source_temp, target_temp], window_name=title)
     
 #==========Registration Functions #start
 def preprocess_point_cloud(pcd, voxel_size):
     print(":: Downsample with a voxel size %.3f." % voxel_size)
     pcd_down = pcd.voxel_down_sample(voxel_size)
-
     radius_normal = voxel_size * 2
     print(":: Estimate normal with search radius %.3f." % radius_normal)
     pcd_down.estimate_normals(
@@ -61,8 +61,6 @@ def prepare_dataset(source,target,voxel_size):
     trans_init = np.asarray([[0.0, 0.0, 1.0, 0.0], [1.0, 0.0, 0.0, 0.0],
                              [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 0.0, 1.0]])
     source.transform(trans_init)
-    draw_registration_result(source, target, np.identity(4))
-
     source_down, source_fpfh = preprocess_point_cloud(source, voxel_size)
     target_down, target_fpfh = preprocess_point_cloud(target, voxel_size)
     return source, target, source_down, target_down, source_fpfh, target_fpfh
@@ -93,7 +91,6 @@ def  get_corrective_transformation(source,target, voxel_size = 0.05,threshold = 
                                                 voxel_size)
         print(result_ransac)
         trans_init =result_ransac.transformation
-        draw_registration_result(source_down, target_down,trans_init)
         """ evaluation = o3d.pipelines.registration.evaluate_registration(
         source, target, threshold,trans_init) """
         reg_p2p = o3d.pipelines.registration.registration_icp(
@@ -175,7 +172,7 @@ if __name__ == "__main__":
     ply_files = [f for f in ply_files if os.path.abspath(f) != os.path.abspath(ref_path)]
     pointclouds = [(f, o3d.io.read_point_cloud(f)) for f in ply_files]
     largest_file, largest_pcl = max(pointclouds, key=lambda x: len(x[1].points))
-    o3d.visualization.draw_geometries([largest_pcl, ref], window_name="As loaded")
+    draw_comparisons(largest_pcl,ref,"As Loaded")
     print(f"Largest file: {largest_file}")
     print(f"Point count: {len(largest_pcl.points)}")
     
@@ -184,14 +181,15 @@ if __name__ == "__main__":
     print(ref.get_axis_aligned_bounding_box())
     print(largest_pcl.get_axis_aligned_bounding_box())
 
+    draw_comparisons(largest_pcl,ref,"Before Scaling")
 
-    o3d.visualization.draw_geometries([largest_pcl, ref], window_name="Before Scaling")
     
     # Since the gazebo mesh model has a different height than in the simulation, it must be rescaled
     scale_factor = get_scale_factor_to_height(ref, reference_geometry_height)
     print("computed Scale factor", scale_factor)
     scale_mantaing_position(ref, scale_factor)# 1.18/4.29(dimension reported by Gazebo)/(Dimension repoted by Blender)
-    o3d.visualization.draw_geometries([largest_pcl, ref], window_name="after Scaling")
+    draw_comparisons(largest_pcl,ref,"after Scaling")
+
     print("reference, scaled to:",ref.get_axis_aligned_bounding_box())
     ref_pts = ref.sample_points_uniformly(number_of_points=SAMPLES_FOR_THE_DISTANCE)
     
@@ -215,12 +213,15 @@ if __name__ == "__main__":
         transform_pcl_to_origin(rec)
         T = get_corrective_transformation(rec,ref_pts)
         rec.transform(T)
-        o3d.visualization.draw_geometries([rec, ref], window_name="computed_alligment")
+        draw_comparisons(rec,ref,"after Scaling")
+
 
         rec = generate_mesh(rec)
         
         # ---- Sampling ----
         rec_pts = rec.sample_points_uniformly(number_of_points=SAMPLES_FOR_THE_DISTANCE)
+        
+        draw_comparisons(rec_pts, ref_pts,"Models on which compute the distances")
         
 
         # ---- Distances ----
@@ -229,7 +230,6 @@ if __name__ == "__main__":
 
         chamfer = dist_ref_to_rec.mean() + dist_rec_to_ref.mean()
         hausdorff = max(dist_ref_to_rec.max(), dist_rec_to_ref.max())
-
         print("Chamfer Distance:", chamfer)
         print("Hausdorff Distance:", hausdorff)
 
