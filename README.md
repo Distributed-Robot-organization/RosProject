@@ -99,6 +99,11 @@ Clone our repository inside your workspace (also before create src file):
 ```bash
 git clone https://github.com/Distributed-Robot-organization/RosProject.git src
 ```
+### Clone the submodules: 
+
+```bash
+git submodule update --init --recursive
+```
 
 ### Build the Docker Image:
 From the workspace root:
